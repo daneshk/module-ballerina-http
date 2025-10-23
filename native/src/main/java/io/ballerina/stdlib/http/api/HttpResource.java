@@ -17,16 +17,18 @@
 */
 package io.ballerina.stdlib.http.api;
 
-import io.ballerina.runtime.api.TypeTags;
 import io.ballerina.runtime.api.creators.TypeCreator;
 import io.ballerina.runtime.api.creators.ValueCreator;
 import io.ballerina.runtime.api.types.ArrayType;
+import io.ballerina.runtime.api.types.FiniteType;
 import io.ballerina.runtime.api.types.MapType;
 import io.ballerina.runtime.api.types.MethodType;
+import io.ballerina.runtime.api.types.PredefinedTypes;
 import io.ballerina.runtime.api.types.RecordType;
 import io.ballerina.runtime.api.types.RemoteMethodType;
 import io.ballerina.runtime.api.types.ResourceMethodType;
 import io.ballerina.runtime.api.types.Type;
+import io.ballerina.runtime.api.types.TypeTags;
 import io.ballerina.runtime.api.types.UnionType;
 import io.ballerina.runtime.api.utils.StringUtils;
 import io.ballerina.runtime.api.utils.TypeUtils;
@@ -45,11 +47,13 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import static io.ballerina.runtime.api.flags.SymbolFlags.OPTIONAL;
 import static io.ballerina.stdlib.http.api.HttpConstants.ANN_NAME_RESOURCE_CONFIG;
 import static io.ballerina.stdlib.http.api.HttpConstants.APPLICATION_JSON;
 import static io.ballerina.stdlib.http.api.HttpConstants.APPLICATION_OCTET_STREAM;
@@ -82,8 +86,8 @@ public class HttpResource implements Resource {
     private static final BString HTTP_RESOURCE_CONFIG =
             StringUtils.fromString(ModuleUtils.getHttpPackageIdentifier() + ":" + ANN_NAME_RESOURCE_CONFIG);
     private static final String RETURN_ANNOT_PREFIX = "$returns$";
-    private static final MapType LINK_MAP_TYPE = TypeCreator.createMapType(TypeCreator.createRecordType(
-            LINK, ModuleUtils.getHttpPackage(), 0, false, 0));
+    private static final RecordType LINK_TYPE = createLinkType();
+    private static final MapType LINK_MAP_TYPE = TypeCreator.createMapType(LINK_TYPE);
 
     private String resourceLinkName;
     private List<LinkedResourceInfo> linkedResources = new ArrayList<>();
@@ -93,7 +97,7 @@ public class HttpResource implements Resource {
     private MethodType balResource;
     private List<String> methods;
     private String path;
-    private String entityBodyAttribute;
+    private String[] pathSegments;
     private List<String> consumes;
     private List<String> produces;
     private List<String> producesSubTypes;
@@ -107,6 +111,7 @@ public class HttpResource implements Resource {
     private BMap cacheConfig;
     private boolean treatNilableAsOptional;
     private boolean constraintValidation;
+    private boolean laxDataBinding;
 
     protected HttpResource(MethodType resource, HttpService parentService) {
         this.balResource = resource;
@@ -199,29 +204,39 @@ public class HttpResource implements Resource {
         return path;
     }
 
+    public String[] getPathSegments() {
+        return pathSegments;
+    }
+
     private void populateResourcePath() {
         ResourceMethodType resourceFunctionType = getBalResource();
         String[] paths = resourceFunctionType.getResourcePath();
         StringBuilder resourcePath = new StringBuilder();
+        List<String> pathSegmentsList = new ArrayList<>();
         int count = 0;
         for (String segment : paths) {
             resourcePath.append(HttpConstants.SINGLE_SLASH);
             if (HttpConstants.PATH_PARAM_IDENTIFIER.equals(segment)) {
                 String pathSegment = resourceFunctionType.getParamNames()[count++];
-                resourcePath.append(HttpConstants.OPEN_CURL_IDENTIFIER)
-                        .append(pathSegment).append(HttpConstants.CLOSE_CURL_IDENTIFIER);
+                String segmentToAdd = HttpConstants.OPEN_CURL_IDENTIFIER + pathSegment +
+                        HttpConstants.CLOSE_CURL_IDENTIFIER;
+                resourcePath.append(segmentToAdd);
+                pathSegmentsList.add(segmentToAdd);
             } else if (HttpConstants.PATH_REST_PARAM_IDENTIFIER.equals(segment)) {
                 this.wildcardToken = resourceFunctionType.getParamNames()[count++];
                 resourcePath.append(HttpConstants.STAR_IDENTIFIER);
+                pathSegmentsList.add(HttpConstants.STAR_IDENTIFIER);
             } else if (HttpConstants.DOT_IDENTIFIER.equals(segment)) {
                 // default set as "/"
                 break;
             } else {
-                resourcePath.append(HttpUtil.unescapeAndEncodeValue(segment));
+                resourcePath.append(HttpUtil.unescapeValue(segment));
+                pathSegmentsList.add(HttpUtil.unescapeAndEncodePath(segment));
             }
         }
         this.path = resourcePath.toString().replaceAll(HttpConstants.REGEX, SINGLE_SLASH);
         this.pathParamCount = count;
+        this.pathSegments = pathSegmentsList.toArray(new String[0]);
     }
 
     @Override
@@ -306,6 +321,7 @@ public class HttpResource implements Resource {
         }
         processResourceCors(httpResource, httpService);
         httpResource.setConstraintValidation(httpService.getConstraintValidation());
+        httpResource.setLaxDataBinding(httpService.getLaxDataBinding());
         httpResource.prepareAndValidateSignatureParams();
         if (Objects.nonNull(httpResource.getResourceLinkName()) && httpResource.linkReturnMediaTypes.isEmpty()) {
             Type resourceReturnType = httpResource.getBalResource().getType().getReturnType();
@@ -325,6 +341,14 @@ public class HttpResource implements Resource {
 
     private boolean getConstraintValidation() {
         return this.constraintValidation;
+    }
+
+    private void setLaxDataBinding(boolean laxDataBinding) {
+        this.laxDataBinding = laxDataBinding;
+    }
+
+    private boolean getLaxDataBinding() {
+        return this.laxDataBinding;
     }
 
     private void updateLinkedResources(Object[] links) {
@@ -383,7 +407,8 @@ public class HttpResource implements Resource {
     }
 
     private void prepareAndValidateSignatureParams() {
-        paramHandler = new ParamHandler(getBalResource(), this.pathParamCount, this.getConstraintValidation());
+        paramHandler = new ParamHandler(getBalResource(), this.pathParamCount, this.getConstraintValidation(),
+                this.getLaxDataBinding());
     }
 
     @Override
@@ -495,6 +520,20 @@ public class HttpResource implements Resource {
 
     public RemoteMethodType getRemoteFunction() {
         return (RemoteMethodType) balResource;
+    }
+
+    private static RecordType createLinkType() {
+        FiniteType method = TypeCreator.createFiniteType("Method",
+                Stream.of("GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS")
+                        .map(StringUtils::fromString).collect(Collectors.toUnmodifiableSet()),
+                0);
+        return TypeCreator.createRecordType(LINK, ModuleUtils.getHttpPackage(), 0, Map.of(
+                "rel", TypeCreator.createField(PredefinedTypes.TYPE_STRING, "rel", OPTIONAL),
+                "href", TypeCreator.createField(PredefinedTypes.TYPE_STRING, "href", 0),
+                "types",
+                TypeCreator.createField(TypeCreator.createArrayType(PredefinedTypes.TYPE_STRING), "types", OPTIONAL),
+                "methods", TypeCreator.createField(TypeCreator.createArrayType(method), "methods", OPTIONAL)
+        ), PredefinedTypes.TYPE_NEVER, false, 0);
     }
 
     /**

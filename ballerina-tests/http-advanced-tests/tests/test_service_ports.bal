@@ -36,9 +36,22 @@ const int trailingHeaderTestPort2 = 9527;
 
 const int corsConfigTestPort = 9013;
 const int multipartRequestTestPort = 9018;
+const int multipartResponseTestPort = 9019;
 const int serviceMediaTypeSubtypePrefixPort = 9579;
 
-const int statusCodeErrorUseCasePort = 9090;
+const int statusCodeErrorUseCasePort = 9089;
 const int statusCodeErrorPort = 9092;
 
 const int identicalCookiePort = 9093;
+const int setCookieParserPort = 9099;
+
+const int cookieTestPort1 = 9253;
+const int cookieTestPort2 = 9254;
+
+const int http1SsePort = 9094;
+const int http2SsePort = 9095;
+
+const int serviceContractTestPort = 9096;
+
+const int laxDataBindingTestPort = 9097;
+const int laxDataBindingNegativeTestPort = 9098;

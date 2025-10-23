@@ -15,12 +15,11 @@
 // under the License.
 
 import ballerina/http;
-// import ballerina/log;
 import ballerina/lang.'string as strings;
 import ballerina/test;
 import ballerina/http_test_common as common;
 
-http:ListenerConfiguration sslProtocolServiceConfig = {
+http:ListenerConfiguration sslProtocol12ServiceConfig = {
     httpVersion: http:HTTP_1_1,
     secureSocket: {
         key: {
@@ -34,23 +33,20 @@ http:ListenerConfiguration sslProtocolServiceConfig = {
     }
 };
 
-listener http:Listener sslProtocolListener = new (9249, config = sslProtocolServiceConfig);
+listener http:Listener sslProtocol12Listener = new (tls12Port, config = sslProtocol12ServiceConfig);
 
-service /protocol on sslProtocolListener {
+service /protocol on sslProtocol12Listener {
 
-    resource function get protocolResource(http:Caller caller, http:Request req) {
-        error? result = caller->respond("Hello World!");
-        if result is error {
-            // log:printError("Failed to respond", 'error = result);
-        }
+    resource function get protocolResource() returns string {
+        return "Hello, World!";
     }
 }
 
-http:ClientConfiguration sslProtocolClientConfig = {
+http:ListenerConfiguration sslProtocol13ServiceConfig = {
     httpVersion: http:HTTP_1_1,
     secureSocket: {
-        cert: {
-            path: common:TRUSTSTORE_PATH,
+        key: {
+            path: common:KEYSTORE_PATH,
             password: "ballerina"
         },
         protocol: {
@@ -60,10 +56,81 @@ http:ClientConfiguration sslProtocolClientConfig = {
     }
 };
 
+listener http:Listener sslProtocol13Listener = new (tls13Port, config = sslProtocol13ServiceConfig);
+
+service /protocol on sslProtocol13Listener {
+
+    resource function get protocolResource() returns string {
+        return "Hello, World!";
+    }
+}
+
+http:ClientSecureSocket sslProtocolClientConfig = {
+    cert: {
+        path: common:TRUSTSTORE_PATH,
+        password: "ballerina"
+    }
+};
+
+@test:Config {}
+public function testTLS12() returns error? {
+    http:ClientSecureSocket sslConfig = sslProtocolClientConfig.clone();
+    sslConfig.protocol = {
+        name: http:TLS,
+        versions: ["TLSv1.2"]
+    };
+    http:Client clientEP = check new (string `https://localhost:${tls12Port}`, secureSocket = sslConfig, httpVersion = http:HTTP_1_1);
+    string resp = check clientEP->/protocol/protocolResource;
+    test:assertEquals(resp, "Hello, World!");
+}
+
+@test:Config {}
+public function testTLS13() returns error? {
+    http:ClientSecureSocket sslConfig = sslProtocolClientConfig.clone();
+    sslConfig.protocol = {
+        name: http:TLS,
+        versions: ["TLSv1.3"]
+    };
+    http:Client clientEP = check new (string `https://localhost:${tls13Port}`, secureSocket = sslConfig, httpVersion = http:HTTP_1_1);
+    string resp = check clientEP->/protocol/protocolResource;
+    test:assertEquals(resp, "Hello, World!");
+}
+
 @test:Config {}
 public function testSslProtocol() returns error? {
-    http:Client clientEP = check new ("https://localhost:9249", sslProtocolClientConfig);
-    http:Response|error resp = clientEP->get("/protocol/protocolResource");
+    http:ClientSecureSocket sslConfig = sslProtocolClientConfig.clone();
+    sslConfig.protocol = {
+        name: http:TLS,
+        versions: ["TLSv1.2", "TLSv1.3"]
+    };
+    http:Client clientEP = check new (string `https://localhost:${tls13Port}`, secureSocket = sslConfig, httpVersion = http:HTTP_1_1);
+    string resp = check clientEP->/protocol/protocolResource;
+    test:assertEquals(resp, "Hello, World!");
+
+    sslConfig.protocol.versions = ["TLSv1.3", "TLSv1.2"];
+    clientEP = check new (string `https://localhost:${tls12Port}`, secureSocket = sslConfig, httpVersion = http:HTTP_1_1);
+    resp = check clientEP->/protocol/protocolResource;
+    test:assertEquals(resp, "Hello, World!");
+}
+
+@test:Config {}
+public function testSslProtocolConflict() returns error? {
+    http:ClientSecureSocket sslConfig = sslProtocolClientConfig.clone();
+    sslConfig.protocol = {
+        name: http:TLS,
+        versions: ["TLSv1.2"]
+    };
+    http:Client clientEP = check new (string `https://localhost:${tls13Port}`, secureSocket = sslConfig, httpVersion = http:HTTP_1_1);
+    http:Response|error resp = clientEP->/protocol/protocolResource;
+    if resp is http:Response {
+        test:assertFail(msg = "Found unexpected output: Expected an error");
+    } else {
+        test:assertTrue(strings:includes(resp.message(), "SSL connection failed"));
+    }
+
+    sslConfig.protocol.versions = ["TLSv1.3"];
+    clientEP = check new (string `https://localhost:${tls12Port}`, secureSocket = sslConfig, httpVersion = http:HTTP_1_1);
+    resp = clientEP->/protocol/protocolResource;
     if resp is http:Response {
         test:assertFail(msg = "Found unexpected output: Expected an error");
     } else {

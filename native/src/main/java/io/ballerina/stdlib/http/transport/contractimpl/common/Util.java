@@ -15,6 +15,7 @@
 
 package io.ballerina.stdlib.http.transport.contractimpl.common;
 
+import io.ballerina.stdlib.http.api.HttpUtil;
 import io.ballerina.stdlib.http.transport.contract.Constants;
 import io.ballerina.stdlib.http.transport.contract.HttpResponseFuture;
 import io.ballerina.stdlib.http.transport.contract.config.ChunkConfig;
@@ -98,8 +99,10 @@ import java.security.cert.CertificateNotYetValidException;
 import java.security.cert.X509Certificate;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
@@ -123,6 +126,7 @@ import static io.ballerina.stdlib.http.transport.contract.Constants.MUTUAL_SSL_F
 import static io.ballerina.stdlib.http.transport.contract.Constants.MUTUAL_SSL_HANDSHAKE_RESULT;
 import static io.ballerina.stdlib.http.transport.contract.Constants.MUTUAL_SSL_PASSED;
 import static io.ballerina.stdlib.http.transport.contract.Constants.OK_200;
+import static io.ballerina.stdlib.http.transport.contract.Constants.OUTBOUND_ACCESS_LOG_MESSAGES;
 import static io.ballerina.stdlib.http.transport.contract.Constants.PROTOCOL;
 import static io.ballerina.stdlib.http.transport.contract.Constants.REMOTE_CLIENT_CLOSED_WHILE_WRITING_OUTBOUND_RESPONSE_HEADERS;
 import static io.ballerina.stdlib.http.transport.contract.Constants.TO;
@@ -142,6 +146,7 @@ public class Util {
 
     private static final Logger LOG = LoggerFactory.getLogger(Util.class);
     public static final String HTTP_1_1 = "http/1.1";
+    private static final float EPSILON = 0.00001f;
 
     private static String getStringValue(HttpCarbonMessage msg, String key, String defaultValue) {
         String value = (String) msg.getProperty(key);
@@ -194,6 +199,9 @@ public class Util {
         if (!keepAlive && (Float.valueOf(inboundReqHttpVersion) >= Constants.HTTP_1_1)) {
             outboundResponseMsg.setHeader(HttpHeaderNames.CONNECTION.toString(), Constants.CONNECTION_CLOSE);
         } else if (keepAlive && (Float.valueOf(inboundReqHttpVersion) < Constants.HTTP_1_1)) {
+            outboundResponseMsg.setHeader(HttpHeaderNames.CONNECTION.toString(), Constants.CONNECTION_KEEP_ALIVE);
+        } else if (Math.abs(Float.valueOf(inboundReqHttpVersion) - Constants.HTTP_1_1) < EPSILON
+                && HttpUtil.hasEventStreamContentType(outboundResponseMsg)) {
             outboundResponseMsg.setHeader(HttpHeaderNames.CONNECTION.toString(), Constants.CONNECTION_KEEP_ALIVE);
         } else {
             outboundResponseMsg.removeHeader(HttpHeaderNames.CONNECTION.toString());
@@ -365,17 +373,14 @@ public class Util {
      * @throws SSLException if any error occurs in the SSL connection
      */
     public static SSLEngine configureHttpPipelineForSSL(SocketChannel socketChannel, String host, int port,
-                                                        SSLConfig sslConfig) throws Exception {
+                                                        SSLConfig sslConfig) {
         LOG.debug("adding ssl handler");
         SSLEngine sslEngine = null;
         SslHandler sslHandler;
         ChannelPipeline pipeline = socketChannel.pipeline();
-        SSLHandlerFactory sslHandlerFactory = new SSLHandlerFactory(sslConfig);
         if (sslConfig.isOcspStaplingEnabled()) {
-            sslHandlerFactory.createSSLContextFromKeystores(false);
-            ReferenceCountedOpenSslContext referenceCountedOpenSslContext = sslHandlerFactory
-                    .buildClientReferenceCountedOpenSslContext();
-
+            ReferenceCountedOpenSslContext referenceCountedOpenSslContext =
+                    sslConfig.getReferenceCountedOpenSslContext();
             if (referenceCountedOpenSslContext != null) {
                 sslHandler = referenceCountedOpenSslContext.newHandler(socketChannel.alloc());
                 sslEngine = sslHandler.engine();
@@ -388,11 +393,11 @@ public class Util {
                 sslEngine = createInsecureSslEngine(socketChannel, sslConfig, host, port);
             } else {
                 if (sslConfig.getTrustStore() != null) {
-                    sslHandlerFactory.createSSLContextFromKeystores(false);
                     sslEngine = instantiateAndConfigSSL(sslConfig, host, port,
-                            sslConfig.isHostNameVerificationEnabled(), sslHandlerFactory);
+                            sslConfig.isHostNameVerificationEnabled(), sslConfig.getSslHandlerFactory());
                 } else {
-                    sslEngine = getSslEngineForCerts(socketChannel, host, port, sslConfig, sslHandlerFactory);
+                    sslEngine = getSslEngineForCerts(socketChannel, host, port, sslConfig,
+                            sslConfig.getSslHandlerFactory());
                 }
             }
             sslHandler = new SslHandler(sslEngine);
@@ -407,12 +412,12 @@ public class Util {
     }
 
     private static SSLEngine getSslEngineForCerts(SocketChannel socketChannel, String host, int port,
-            SSLConfig sslConfig, SSLHandlerFactory sslHandlerFactory) throws SSLException {
-        SslContext sslContext = sslHandlerFactory.createHttpTLSContextForClient();
+            SSLConfig sslConfig, SSLHandlerFactory sslHandlerFactory) {
+        SslContext sslContext = sslConfig.getSslContext();
         SslHandler sslHandler = sslContext.newHandler(socketChannel.alloc(), host, port);
         SSLEngine sslEngine = sslHandler.engine();
         sslHandlerFactory.addCommonConfigs(sslEngine);
-        sslHandlerFactory.setSNIServerNames(sslEngine, host);
+        configureSniServerName(sslConfig, host, sslHandlerFactory, sslEngine);
         if (sslConfig.isHostNameVerificationEnabled()) {
             setHostNameVerfication(sslEngine);
         }
@@ -420,27 +425,8 @@ public class Util {
     }
 
     private static SSLEngine createInsecureSslEngine(SocketChannel socketChannel, SSLConfig sslConfig, String host,
-                                                     int port) throws Exception {
-        SslContext sslContext;
-        if (sslConfig.getKeyStore() != null && sslConfig.getKeyStorePass() != null) {
-            KeyStore ks = getKeyStore(sslConfig);
-            KeyManagerFactory kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
-            kmf.init(ks, sslConfig.getCertPass() != null ?
-                    sslConfig.getCertPass().toCharArray() :
-                    sslConfig.getKeyStorePass().toCharArray());
-            sslContext = SslContextBuilder.forClient().sslProvider(SslProvider.JDK)
-                    .trustManager(InsecureTrustManagerFactory.INSTANCE)
-                    .keyManager(kmf)
-                    .build();
-        } else if (sslConfig.getClientKeyFile() != null && sslConfig.getClientCertificates() != null) {
-            String keyPassword = sslConfig.getClientKeyPassword();
-            sslContext = SslContextBuilder.forClient().sslProvider(SslProvider.JDK)
-                    .keyManager(sslConfig.getClientCertificates(), sslConfig.getClientKeyFile(), keyPassword)
-                    .trustManager(InsecureTrustManagerFactory.INSTANCE).build();
-        } else {
-            sslContext = SslContextBuilder.forClient().sslProvider(SslProvider.JDK)
-                    .trustManager(InsecureTrustManagerFactory.INSTANCE).build();
-        }
+                                                     int port) {
+        SslContext sslContext = sslConfig.getSslContext();
         SslHandler sslHandler = sslContext.newHandler(socketChannel.alloc(), host, port);
         return sslHandler.engine();
     }
@@ -479,7 +465,29 @@ public class Util {
         return sslContextBuilder.build();
     }
 
-    private static KeyStore getKeyStore(SSLConfig sslConfig) throws IOException {
+    public static SslContext createInsecureSslEngineForHttp(SSLConfig sslConfig) throws Exception {
+        if (sslConfig.getKeyStore() != null && sslConfig.getKeyStorePass() != null) {
+            KeyStore ks = getKeyStore(sslConfig);
+            KeyManagerFactory kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
+            kmf.init(ks, sslConfig.getCertPass() != null ?
+                    sslConfig.getCertPass().toCharArray() :
+                    sslConfig.getKeyStorePass().toCharArray());
+            return SslContextBuilder.forClient().sslProvider(SslProvider.JDK)
+                    .trustManager(InsecureTrustManagerFactory.INSTANCE)
+                    .keyManager(kmf)
+                    .build();
+        } else if (sslConfig.getClientKeyFile() != null && sslConfig.getClientCertificates() != null) {
+            String keyPassword = sslConfig.getClientKeyPassword();
+            return SslContextBuilder.forClient().sslProvider(SslProvider.JDK)
+                    .keyManager(sslConfig.getClientCertificates(), sslConfig.getClientKeyFile(), keyPassword)
+                    .trustManager(InsecureTrustManagerFactory.INSTANCE).build();
+        } else {
+            return SslContextBuilder.forClient().sslProvider(SslProvider.JDK)
+                    .trustManager(InsecureTrustManagerFactory.INSTANCE).build();
+        }
+    }
+
+    public static KeyStore getKeyStore(SSLConfig sslConfig) throws IOException {
         String tlsStoreType = sslConfig.getTLSStoreType();
         try (InputStream is = new FileInputStream(sslConfig.getKeyStore())) {
             KeyStore ks = KeyStore.getInstance(tlsStoreType);
@@ -507,12 +515,18 @@ public class Util {
         if (sslConfig != null) {
             sslEngine = sslHandlerFactory.buildClientSSLEngine(host, port);
             sslEngine.setUseClientMode(true);
-            sslHandlerFactory.setSNIServerNames(sslEngine, host);
+            configureSniServerName(sslConfig, host, sslHandlerFactory, sslEngine);
             if (hostNameVerificationEnabled) {
                 sslHandlerFactory.setHostNameVerfication(sslEngine);
             }
         }
         return sslEngine;
+    }
+
+    private static void configureSniServerName(SSLConfig sslConfig, String host, SSLHandlerFactory sslHandlerFactory,
+                                               SSLEngine sslEngine) {
+        sslHandlerFactory.setSNIServerNames(sslEngine,
+                sslConfig.getSniHostName() != null ? sslConfig.getSniHostName() : host);
     }
 
     /**
@@ -867,6 +881,7 @@ public class Util {
                 ctx.channel().attr(Constants.MUTUAL_SSL_RESULT_ATTRIBUTE).get());
         inboundRequestMsg.setProperty(BASE_64_ENCODED_CERT,
                 ctx.channel().attr(Constants.BASE_64_ENCODED_CERT_ATTRIBUTE).get());
+        inboundRequestMsg.setProperty(OUTBOUND_ACCESS_LOG_MESSAGES, new ArrayList<>());
 
         return inboundRequestMsg;
     }
@@ -911,8 +926,9 @@ public class Util {
                 return false;
             }
             if (inboundRequestMsg.getHeaders().contains(HttpHeaderNames.CONNECTION)) {
-                return !inboundRequestMsg.getHeaders().get(HttpHeaderNames.CONNECTION)
-                        .equalsIgnoreCase(HttpHeaderValues.CLOSE.toString());
+                String connectionHeader = inboundRequestMsg.getHeaders().get(HttpHeaderNames.CONNECTION);
+                return Objects.isNull(connectionHeader) ||
+                        !connectionHeader.equalsIgnoreCase(HttpHeaderValues.CLOSE.toString());
             }
             return true;
         case ALWAYS:

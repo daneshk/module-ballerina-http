@@ -7,6 +7,10 @@ on:
                 description: Module timestamped version
                 required: false
                 default: ''
+            lang_version:
+                description: Ballerina language version
+                required: false
+                default: ''
             target_branch:
                 description: Target branch of the dependent module
                 required: false
@@ -30,11 +34,11 @@ jobs:
             matrix:
                 module: ${{ fromJson(inputs.ballerina_modules) }}
         steps:
-            - name: Set up JDK 17
+            - name: Set up JDK 21
               uses: actions/setup-java@v3
               with:
                   distribution: 'temurin'
-                  java-version: 17.0.7
+                  java-version: 21.0.3
 
             - name: Checkout module
               uses: actions/checkout@v3
@@ -83,12 +87,21 @@ jobs:
                   fi
                   echo HTTPVERSION=$HTTP_VERSION
                   sed -i "s/stdlibHttpVersion=\(.*\)/stdlibHttpVersion=$HTTP_VERSION/g" gradle.properties
+
+            - name: Change Ballerina lang version
+              if: ${{ inputs.lang_version != ''}}
+              run: |
+                  LANG_VERSION=${{ inputs.lang_version }}
+                  echo LANGVERSION=$LANG_VERSION
+                  sed -i "s/ballerinaLangVersion=\(.*\)/ballerinaLangVersion=$LANG_VERSION/g" gradle.properties
+                  
             - name: Build with Gradle
               env:
                   packageUser: ${{ github.actor }}
                   packagePAT: ${{ secrets.GITHUB_TOKEN }}
               run: |
                   ./gradlew clean build
+                  
     build-ballerinax-modules:
         if: inputs.ballerinax_modules != ''
         name: Build Ballerina Extended Module
@@ -98,11 +111,11 @@ jobs:
             matrix:
                 module: ${{ fromJson(inputs.ballerinax_modules) }}
         steps:
-            - name: Set up JDK 17
+            - name: Set up JDK 21
               uses: actions/setup-java@v3
               with:
                   distribution: 'temurin'
-                  java-version: 17.0.7
+                  java-version: 21.0.3
 
             - name: Checkout module
               uses: actions/checkout@v3
@@ -151,6 +164,14 @@ jobs:
                   fi
                   echo HTTPVERSION=$HTTP_VERSION
                   sed -i "s/stdlibHttpVersion=\(.*\)/stdlibHttpVersion=$HTTP_VERSION/g" gradle.properties
+
+            - name: Change Ballerina lang version
+              if: ${{ inputs.lang_version != ''}}
+              run: |
+                  LANG_VERSION=${{ inputs.lang_version }}
+                  echo LANGVERSION=$LANG_VERSION
+                  sed -i "s/ballerinaLangVersion=\(.*\)/ballerinaLangVersion=$LANG_VERSION/g" gradle.properties
+                  
             - name: Build with Gradle
               env:
                   packageUser: ${{ github.actor }}

@@ -19,15 +19,14 @@ import ballerina/mime;
 import ballerina/observe;
 import ballerina/time;
 
-# The HTTP client provides the capability for initiating contact with a remote HTTP service. The API it
-# provides includes the functions for the standard HTTP methods forwarding a received request and sending requests
-# using custom HTTP verbs.
-
+# The HTTP client provides functionality to connect to remote HTTP services and perform requests using standard HTTP methods like GET, POST, PUT, DELETE, etc.
+#
 # + url - Target service url
 # + httpClient - Chain of different HTTP clients which provides the capability for initiating contact with a remote
 #                HTTP service in resilient manner
 # + cookieStore - Stores the cookies of the client
-# + requireValidation - Enables the inbound payload validation functionalty which provided by the constraint package
+# + requireValidation - Enables the inbound payload validation functionality which provided by the constraint package
+# + requireLaxDataBinding - Enables or disables relaxed data binding.
 public client isolated class Client {
     *ClientObject;
 
@@ -35,6 +34,7 @@ public client isolated class Client {
     private CookieStore? cookieStore = ();
     final HttpClient httpClient;
     private final boolean requireValidation;
+    private final boolean requireLaxDataBinding;
 
     # Gets invoked to initialize the `client`. During initialization, the configurations provided through the `config`
     # record is used to determine which type of additional behaviours are added to the endpoint (e.g., caching,
@@ -44,7 +44,6 @@ public client isolated class Client {
     # + config - The configurations to be used when initializing the `client`
     # + return - The `client` or an `http:ClientError` if the initialization failed
     public isolated function init(string url, *ClientConfiguration config) returns ClientError? {
-        self.url = url;
         var cookieConfigVal = config.cookieConfig;
         if cookieConfigVal is CookieConfig {
             if cookieConfigVal.enabled {
@@ -52,8 +51,56 @@ public client isolated class Client {
             }
         }
         self.httpClient = check initialize(url, config, self.cookieStore);
+        self.url = getURLWithScheme(url, self.httpClient);
         self.requireValidation = config.validation;
+        self.requireLaxDataBinding = config.laxDataBinding;
         return;
+    }
+
+    # The client resource function to send HTTP GET requests to HTTP endpoints.
+    #
+    # + path - Request path
+    # + headers - The entity headers
+    # + targetType - Expected return type (to be used for automatic data binding).
+    #                Supported types:
+    #                - Built-in subtypes of `anydata` (`string`, `byte[]`, `json|xml`, etc.)
+    #                - Custom types (e.g., `User`, `Student?`, `Person[]`, etc.)
+    #                - Full HTTP response with headers and status (`http:Response`)
+    #                - Stream of Server-Sent Events (`stream<http:SseEvent, error?>`)
+    # + params - The query parameters
+    # + return - The response or the payload (if the `targetType` is configured) or an `http:ClientError` if failed to
+    #            establish the communication with the upstream server or a data binding failure
+    isolated resource function get [PathParamType ...path](map<string|string[]>? headers = (), TargetType targetType = <>,
+            *QueryParams params) returns targetType|ClientError = @java:Method {
+        'class: "io.ballerina.stdlib.http.api.client.actions.HttpClientAction",
+        name: "getResource"
+    } external;
+
+    # Retrieve a representation of a specified resource from an HTTP endpoint.
+    #
+    # + path - Request path
+    # + headers - The entity headers
+    # + targetType - Expected return type (to be used for automatic data binding).
+    #                Supported types:
+    #                - Built-in subtypes of `anydata` (`string`, `byte[]`, `json|xml`, etc.)
+    #                - Custom types (e.g., `User`, `Student?`, `Person[]`, etc.)
+    #                - Full HTTP response with headers and status (`http:Response`)
+    #                - Stream of Server-Sent Events (`stream<http:SseEvent, error?>`)
+    # + return - The response or the payload (if the `targetType` is configured) or an `http:ClientError` if failed to
+    #            establish the communication with the upstream server or a data binding failure
+    remote isolated function get(string path, map<string|string[]>? headers = (), TargetType targetType = <>)
+            returns targetType|ClientError = @java:Method {
+        'class: "io.ballerina.stdlib.http.api.client.actions.HttpClientAction"
+    } external;
+
+    private isolated function processGet(string path, map<string|string[]>? headers, TargetType targetType)
+            returns Response|stream<SseEvent, error?>|anydata|ClientError {
+        Request req = buildRequestWithHeaders(headers);
+        Response|ClientError response = self.httpClient->get(path, message = req);
+        if observabilityEnabled && response is Response {
+            addObservabilityInformation(path, HTTP_GET, response.statusCode, self.url);
+        }
+        return processResponse(response, targetType, self.requireValidation, self.requireLaxDataBinding);
     }
 
     # The client resource function to send HTTP POST requests to HTTP endpoints.
@@ -62,7 +109,12 @@ public client isolated class Client {
     # + message - An HTTP outbound request or any allowed payload
     # + headers - The entity headers
     # + mediaType - The MIME type header of the request entity
-    # + targetType - HTTP response or `anydata`, which is expected to be returned after data binding
+    # + targetType - Expected return type (to be used for automatic data binding).
+    #                Supported types:
+    #                - Built-in subtypes of `anydata` (`string`, `byte[]`, `json|xml`, etc.)
+    #                - Custom types (e.g., `User`, `Student?`, `Person[]`, etc.)
+    #                - Full HTTP response with headers and status (`http:Response`)
+    #                - Stream of Server-Sent Events (`stream<http:SseEvent, error?>`)
     # + params - The query parameters
     # + return - The response or the payload (if the `targetType` is configured) or an `http:ClientError` if failed to
     #            establish the communication with the upstream server or a data binding failure
@@ -72,13 +124,18 @@ public client isolated class Client {
         name: "postResource"
     } external;
 
-    # The `Client.post()` function can be used to send HTTP POST requests to HTTP endpoints.
+    # Create a new resource or submit data to a resource for processing.
     #
     # + path - Resource path
     # + message - An HTTP outbound request or any allowed payload
     # + headers - The entity headers
     # + mediaType - The MIME type header of the request entity
-    # + targetType - HTTP response or `anydata`, which is expected to be returned after data binding
+    # + targetType - Expected return type (to be used for automatic data binding).
+    #                Supported types:
+    #                - Built-in subtypes of `anydata` (`string`, `byte[]`, `json|xml`, etc.)
+    #                - Custom types (e.g., `User`, `Student?`, `Person[]`, etc.)
+    #                - Full HTTP response with headers and status (`http:Response`)
+    #                - Stream of Server-Sent Events (`stream<http:SseEvent, error?>`)
     # + return - The response or the payload (if the `targetType` is configured) or an `http:ClientError` if failed to
     #            establish the communication with the upstream server or a data binding failure
     remote isolated function post(string path, RequestMessage message, map<string|string[]>? headers = (),
@@ -88,14 +145,14 @@ public client isolated class Client {
     } external;
 
     private isolated function processPost(string path, RequestMessage message, TargetType targetType,
-            string? mediaType, map<string|string[]>? headers) returns Response|anydata|ClientError {
+            string? mediaType, map<string|string[]>? headers) returns Response|stream<SseEvent, error?>|anydata|ClientError {
         Request req = check buildRequest(message, mediaType);
         populateOptions(req, mediaType, headers);
         Response|ClientError response = self.httpClient->post(path, req);
         if observabilityEnabled && response is Response {
             addObservabilityInformation(path, HTTP_POST, response.statusCode, self.url);
         }
-        return processResponse(response, targetType, self.requireValidation);
+        return processResponse(response, targetType, self.requireValidation, self.requireLaxDataBinding);
     }
 
     # The client resource function to send HTTP PUT requests to HTTP endpoints.
@@ -104,7 +161,12 @@ public client isolated class Client {
     # + message - An HTTP outbound request or any allowed payload
     # + headers - The entity headers
     # + mediaType - The MIME type header of the request entity
-    # + targetType - HTTP response or `anydata`, which is expected to be returned after data binding
+    # + targetType - Expected return type (to be used for automatic data binding).
+    #                Supported types:
+    #                - Built-in subtypes of `anydata` (`string`, `byte[]`, `json|xml`, etc.)
+    #                - Custom types (e.g., `User`, `Student?`, `Person[]`, etc.)
+    #                - Full HTTP response with headers and status (`http:Response`)
+    #                - Stream of Server-Sent Events (`stream<http:SseEvent, error?>`)
     # + params - The query parameters
     # + return - The response or the payload (if the `targetType` is configured) or an `http:ClientError` if failed to
     #            establish the communication with the upstream server or a data binding failure
@@ -114,13 +176,18 @@ public client isolated class Client {
         name: "putResource"
     } external;
 
-    # The `Client.put()` function can be used to send HTTP PUT requests to HTTP endpoints.
+    # Create a new resource or replace a representation of a specified resource.
     #
     # + path - Resource path
     # + message - An HTTP outbound request or any allowed payload
     # + mediaType - The MIME type header of the request entity
     # + headers - The entity headers
-    # + targetType - HTTP response or `anydata`, which is expected to be returned after data binding
+    # + targetType - Expected return type (to be used for automatic data binding).
+    #                Supported types:
+    #                - Built-in subtypes of `anydata` (`string`, `byte[]`, `json|xml`, etc.)
+    #                - Custom types (e.g., `User`, `Student?`, `Person[]`, etc.)
+    #                - Full HTTP response with headers and status (`http:Response`)
+    #                - Stream of Server-Sent Events (`stream<http:SseEvent, error?>`)
     # + return - The response or the payload (if the `targetType` is configured) or an `http:ClientError` if failed to
     #            establish the communication with the upstream server or a data binding failure
     remote isolated function put(string path, RequestMessage message, map<string|string[]>? headers = (),
@@ -130,56 +197,14 @@ public client isolated class Client {
     } external;
 
     private isolated function processPut(string path, RequestMessage message, TargetType targetType,
-            string? mediaType, map<string|string[]>? headers) returns Response|anydata|ClientError {
+            string? mediaType, map<string|string[]>? headers) returns Response|stream<SseEvent, error?>|anydata|ClientError {
         Request req = check buildRequest(message, mediaType);
         populateOptions(req, mediaType, headers);
         Response|ClientError response = self.httpClient->put(path, req);
         if observabilityEnabled && response is Response {
             addObservabilityInformation(path, HTTP_PUT, response.statusCode, self.url);
         }
-        return processResponse(response, targetType, self.requireValidation);
-    }
-
-    # The client resource function to send HTTP PATCH requests to HTTP endpoints.
-    #
-    # + path - Request path
-    # + message - An HTTP outbound request or any allowed payload
-    # + headers - The entity headers
-    # + mediaType - The MIME type header of the request entity
-    # + targetType - HTTP response or `anydata`, which is expected to be returned after data binding
-    # + params - The query parameters
-    # + return - The response or the payload (if the `targetType` is configured) or an `http:ClientError` if failed to
-    #            establish the communication with the upstream server or a data binding failure
-    isolated resource function patch [PathParamType ...path](RequestMessage message, map<string|string[]>? headers = (),
-            string? mediaType = (), TargetType targetType = <>, *QueryParams params) returns targetType|ClientError = @java:Method {
-        'class: "io.ballerina.stdlib.http.api.client.actions.HttpClientAction",
-        name: "patchResource"
-    } external;
-
-    # The `Client.patch()` function can be used to send HTTP PATCH requests to HTTP endpoints.
-    #
-    # + path - Resource path
-    # + message - An HTTP outbound request or any allowed payload
-    # + mediaType - The MIME type header of the request entity
-    # + headers - The entity headers
-    # + targetType - HTTP response or `anydata`, which is expected to be returned after data binding
-    # + return - The response or the payload (if the `targetType` is configured) or an `http:ClientError` if failed to
-    #            establish the communication with the upstream server or a data binding failure
-    remote isolated function patch(string path, RequestMessage message, map<string|string[]>? headers = (),
-            string? mediaType = (), TargetType targetType = <>)
-            returns targetType|ClientError = @java:Method {
-        'class: "io.ballerina.stdlib.http.api.client.actions.HttpClientAction"
-    } external;
-
-    private isolated function processPatch(string path, RequestMessage message, TargetType targetType,
-            string? mediaType, map<string|string[]>? headers) returns Response|anydata|ClientError {
-        Request req = check buildRequest(message, mediaType);
-        populateOptions(req, mediaType, headers);
-        Response|ClientError response = self.httpClient->patch(path, req);
-        if observabilityEnabled && response is Response {
-            addObservabilityInformation(path, HTTP_PATCH, response.statusCode, self.url);
-        }
-        return processResponse(response, targetType, self.requireValidation);
+        return processResponse(response, targetType, self.requireValidation, self.requireLaxDataBinding);
     }
 
     # The client resource function to send HTTP DELETE requests to HTTP endpoints.
@@ -188,7 +213,12 @@ public client isolated class Client {
     # + message - An optional HTTP outbound request or any allowed payload
     # + headers - The entity headers
     # + mediaType - The MIME type header of the request entity
-    # + targetType - HTTP response or `anydata`, which is expected to be returned after data binding
+    # + targetType - Expected return type (to be used for automatic data binding).
+    #                Supported types:
+    #                - Built-in subtypes of `anydata` (`string`, `byte[]`, `json|xml`, etc.)
+    #                - Custom types (e.g., `User`, `Student?`, `Person[]`, etc.)
+    #                - Full HTTP response with headers and status (`http:Response`)
+    #                - Stream of Server-Sent Events (`stream<http:SseEvent, error?>`)
     # + params - The query parameters
     # + return - The response or the payload (if the `targetType` is configured) or an `http:ClientError` if failed to
     #            establish the communication with the upstream server or a data binding failure
@@ -198,13 +228,18 @@ public client isolated class Client {
         name: "deleteResource"
     } external;
 
-    # The `Client.delete()` function can be used to send HTTP DELETE requests to HTTP endpoints.
+    # Remove a specified resource from an HTTP endpoint.
     #
     # + path - Resource path
     # + message - An optional HTTP outbound request message or any allowed payload
     # + mediaType - The MIME type header of the request entity
     # + headers - The entity headers
-    # + targetType - HTTP response or `anydata`, which is expected to be returned after data binding
+    # + targetType - Expected return type (to be used for automatic data binding).
+    #                Supported types:
+    #                - Built-in subtypes of `anydata` (`string`, `byte[]`, `json|xml`, etc.)
+    #                - Custom types (e.g., `User`, `Student?`, `Person[]`, etc.)
+    #                - Full HTTP response with headers and status (`http:Response`)
+    #                - Stream of Server-Sent Events (`stream<http:SseEvent, error?>`)
     # + return - The response or the payload (if the `targetType` is configured) or an `http:ClientError` if failed to
     #            establish the communication with the upstream server or a data binding failure
     remote isolated function delete(string path, RequestMessage message = (),
@@ -214,14 +249,66 @@ public client isolated class Client {
     } external;
 
     private isolated function processDelete(string path, RequestMessage message, TargetType targetType,
-            string? mediaType, map<string|string[]>? headers) returns Response|anydata|ClientError {
+            string? mediaType, map<string|string[]>? headers) returns Response|stream<SseEvent, error?>|anydata|ClientError {
         Request req = check buildRequest(message, mediaType);
         populateOptions(req, mediaType, headers);
         Response|ClientError response = self.httpClient->delete(path, req);
         if observabilityEnabled && response is Response {
             addObservabilityInformation(path, HTTP_DELETE, response.statusCode, self.url);
         }
-        return processResponse(response, targetType, self.requireValidation);
+        return processResponse(response, targetType, self.requireValidation, self.requireLaxDataBinding);
+    }
+
+    # The client resource function to send HTTP PATCH requests to HTTP endpoints.
+    #
+    # + path - Request path
+    # + message - An HTTP outbound request or any allowed payload
+    # + headers - The entity headers
+    # + mediaType - The MIME type header of the request entity
+    # + targetType - Expected return type (to be used for automatic data binding).
+    #                Supported types:
+    #                - Built-in subtypes of `anydata` (`string`, `byte[]`, `json|xml`, etc.)
+    #                - Custom types (e.g., `User`, `Student?`, `Person[]`, etc.)
+    #                - Full HTTP response with headers and status (`http:Response`)
+    #                - Stream of Server-Sent Events (`stream<http:SseEvent, error?>`)
+    # + params - The query parameters
+    # + return - The response or the payload (if the `targetType` is configured) or an `http:ClientError` if failed to
+    #            establish the communication with the upstream server or a data binding failure
+    isolated resource function patch [PathParamType ...path](RequestMessage message, map<string|string[]>? headers = (),
+            string? mediaType = (), TargetType targetType = <>, *QueryParams params) returns targetType|ClientError = @java:Method {
+        'class: "io.ballerina.stdlib.http.api.client.actions.HttpClientAction",
+        name: "patchResource"
+    } external;
+
+    # Partially update an existing resource in an HTTP endpoint.
+    #
+    # + path - Resource path
+    # + message - An HTTP outbound request or any allowed payload
+    # + mediaType - The MIME type header of the request entity
+    # + headers - The entity headers
+    # + targetType - Expected return type (to be used for automatic data binding).
+    #                Supported types:
+    #                - Built-in subtypes of `anydata` (`string`, `byte[]`, `json|xml`, etc.)
+    #                - Custom types (e.g., `User`, `Student?`, `Person[]`, etc.)
+    #                - Full HTTP response with headers and status (`http:Response`)
+    #                - Stream of Server-Sent Events (`stream<http:SseEvent, error?>`)
+    # + return - The response or the payload (if the `targetType` is configured) or an `http:ClientError` if failed to
+    #            establish the communication with the upstream server or a data binding failure
+    remote isolated function patch(string path, RequestMessage message, map<string|string[]>? headers = (),
+            string? mediaType = (), TargetType targetType = <>)
+            returns targetType|ClientError = @java:Method {
+        'class: "io.ballerina.stdlib.http.api.client.actions.HttpClientAction"
+    } external;
+
+    private isolated function processPatch(string path, RequestMessage message, TargetType targetType,
+            string? mediaType, map<string|string[]>? headers) returns Response|stream<SseEvent, error?>|anydata|ClientError {
+        Request req = check buildRequest(message, mediaType);
+        populateOptions(req, mediaType, headers);
+        Response|ClientError response = self.httpClient->patch(path, req);
+        if observabilityEnabled && response is Response {
+            addObservabilityInformation(path, HTTP_PATCH, response.statusCode, self.url);
+        }
+        return processResponse(response, targetType, self.requireValidation, self.requireLaxDataBinding);
     }
 
     # The client resource function to send HTTP HEAD requests to HTTP endpoints.
@@ -236,7 +323,7 @@ public client isolated class Client {
         name: "headResource"
     } external;
 
-    # The `Client.head()` function can be used to send HTTP HEAD requests to HTTP endpoints.
+    # Get the metadata of a resource in the form of headers without the body. Often used for testing the resource existence or finding recent modifications.
     #
     # + path - Resource path
     # + headers - The entity headers
@@ -249,48 +336,17 @@ public client isolated class Client {
         }
         return response;
     }
-    
-    # The client resource function to send HTTP GET requests to HTTP endpoints.
-    #
-    # + path - Request path
-    # + headers - The entity headers
-    # + targetType - HTTP response or `anydata`, which is expected to be returned after data binding
-    # + params - The query parameters
-    # + return - The response or the payload (if the `targetType` is configured) or an `http:ClientError` if failed to
-    #            establish the communication with the upstream server or a data binding failure
-    isolated resource function get [PathParamType ...path](map<string|string[]>? headers = (), TargetType targetType = <>,
-            *QueryParams params) returns targetType|ClientError = @java:Method {
-        'class: "io.ballerina.stdlib.http.api.client.actions.HttpClientAction",
-        name: "getResource"
-    } external;
-
-    # The `Client.get()` function can be used to send HTTP GET requests to HTTP endpoints.
-    #
-    # + path - Request path
-    # + headers - The entity headers
-    # + targetType - HTTP response or `anydata`, which is expected to be returned after data binding
-    # + return - The response or the payload (if the `targetType` is configured) or an `http:ClientError` if failed to
-    #            establish the communication with the upstream server or a data binding failure
-    remote isolated function get(string path, map<string|string[]>? headers = (), TargetType targetType = <>)
-            returns targetType|ClientError = @java:Method {
-        'class: "io.ballerina.stdlib.http.api.client.actions.HttpClientAction"
-    } external;
-
-    private isolated function processGet(string path, map<string|string[]>? headers, TargetType targetType)
-            returns Response|anydata|ClientError {
-        Request req = buildRequestWithHeaders(headers);
-        Response|ClientError response = self.httpClient->get(path, message = req);
-        if observabilityEnabled && response is Response {
-            addObservabilityInformation(path, HTTP_GET, response.statusCode, self.url);
-        }
-        return processResponse(response, targetType, self.requireValidation);
-    }
 
     # The client resource function to send HTTP OPTIONS requests to HTTP endpoints.
     #
     # + path - Request path
     # + headers - The entity headers
-    # + targetType - HTTP response or `anydata`, which is expected to be returned after data binding
+    # + targetType - Expected return type (to be used for automatic data binding).
+    #                Supported types:
+    #                - Built-in subtypes of `anydata` (`string`, `byte[]`, `json|xml`, etc.)
+    #                - Custom types (e.g., `User`, `Student?`, `Person[]`, etc.)
+    #                - Full HTTP response with headers and status (`http:Response`)
+    #                - Stream of Server-Sent Events (`stream<http:SseEvent, error?>`)
     # + params - The query parameters
     # + return - The response or the payload (if the `targetType` is configured) or an `http:ClientError` if failed to
     #            establish the communication with the upstream server or a data binding failure
@@ -300,11 +356,16 @@ public client isolated class Client {
         name: "optionsResource"
     } external;
 
-    # The `Client.options()` function can be used to send HTTP OPTIONS requests to HTTP endpoints.
+    # Get the communication options for a specified resource.
     #
     # + path - Request path
     # + headers - The entity headers
-    # + targetType - HTTP response or `anydata`, which is expected to be returned after data binding
+    # + targetType - Expected return type (to be used for automatic data binding).
+    #                Supported types:
+    #                - Built-in subtypes of `anydata` (`string`, `byte[]`, `json|xml`, etc.)
+    #                - Custom types (e.g., `User`, `Student?`, `Person[]`, etc.)
+    #                - Full HTTP response with headers and status (`http:Response`)
+    #                - Stream of Server-Sent Events (`stream<http:SseEvent, error?>`)
     # + return - The response or the payload (if the `targetType` is configured) or an `http:ClientError` if failed to
     #            establish the communication with the upstream server or a data binding failure
     remote isolated function options(string path, map<string|string[]>? headers = (), TargetType targetType = <>)
@@ -313,23 +374,28 @@ public client isolated class Client {
     } external;
 
     private isolated function processOptions(string path, map<string|string[]>? headers, TargetType targetType)
-            returns Response|anydata|ClientError {
+            returns Response|stream<SseEvent, error?>|anydata|ClientError {
         Request req = buildRequestWithHeaders(headers);
         Response|ClientError response = self.httpClient->options(path, message = req);
         if observabilityEnabled && response is Response {
             addObservabilityInformation(path, HTTP_OPTIONS, response.statusCode, self.url);
         }
-        return processResponse(response, targetType, self.requireValidation);
+        return processResponse(response, targetType, self.requireValidation, self.requireLaxDataBinding);
     }
 
-    # Invokes an HTTP call with the specified HTTP verb.
+    # Send a request using any HTTP method. Can be used to invoke the endpoint with a custom or less common HTTP method.
     #
     # + httpVerb - HTTP verb value
     # + path - Resource path
     # + message - An HTTP outbound request or any allowed payload
     # + mediaType - The MIME type header of the request entity
     # + headers - The entity headers
-    # + targetType - HTTP response or `anydata`, which is expected to be returned after data binding
+    # + targetType - Expected return type (to be used for automatic data binding).
+    #                Supported types:
+    #                - Built-in subtypes of `anydata` (`string`, `byte[]`, `json|xml`, etc.)
+    #                - Custom types (e.g., `User`, `Student?`, `Person[]`, etc.)
+    #                - Full HTTP response with headers and status (`http:Response`)
+    #                - Stream of Server-Sent Events (`stream<http:SseEvent, error?>`)
     # + return - The response or the payload (if the `targetType` is configured) or an `http:ClientError` if failed to
     #            establish the communication with the upstream server or a data binding failure
     remote isolated function execute(string httpVerb, string path, RequestMessage message,
@@ -340,21 +406,26 @@ public client isolated class Client {
 
     private isolated function processExecute(string httpVerb, string path, RequestMessage message,
             TargetType targetType, string? mediaType, map<string|string[]>? headers)
-            returns Response|anydata|ClientError {
+            returns Response|stream<SseEvent, error?>|anydata|ClientError {
         Request req = check buildRequest(message, mediaType);
         populateOptions(req, mediaType, headers);
         Response|ClientError response = self.httpClient->execute(httpVerb, path, req);
         if observabilityEnabled && response is Response {
             addObservabilityInformation(path, httpVerb, response.statusCode, self.url);
         }
-        return processResponse(response, targetType, self.requireValidation);
+        return processResponse(response, targetType, self.requireValidation, self.requireLaxDataBinding);
     }
 
-    # The `Client.forward()` function can be used to invoke an HTTP call with inbound request's HTTP verb
+    # Forward an incoming request to another endpoint using the same HTTP method. Can be used in proxy or gateway scenarios.
     #
     # + path - Request path
     # + request - An HTTP inbound request message
-    # + targetType - HTTP response or `anydata`, which is expected to be returned after data binding
+    # + targetType - Expected return type (to be used for automatic data binding).
+    #                Supported types:
+    #                - Built-in subtypes of `anydata` (`string`, `byte[]`, `json|xml`, etc.)
+    #                - Custom types (e.g., `User`, `Student?`, `Person[]`, etc.)
+    #                - Full HTTP response with headers and status (`http:Response`)
+    #                - Stream of Server-Sent Events (`stream<http:SseEvent, error?>`)
     # + return - The response or the payload (if the `targetType` is configured) or an `http:ClientError` if failed to
     #            establish the communication with the upstream server or a data binding failure
     remote isolated function forward(string path, Request request, TargetType targetType = <>)
@@ -363,19 +434,18 @@ public client isolated class Client {
     } external;
 
     private isolated function processForward(string path, Request request, TargetType targetType)
-            returns Response|anydata|ClientError {
+            returns Response|stream<SseEvent, error?>|anydata|ClientError {
         Response|ClientError response = self.httpClient->forward(path, request);
         if observabilityEnabled && response is Response {
             addObservabilityInformation(path, request.method, response.statusCode, self.url);
         }
-        return processResponse(response, targetType, self.requireValidation);
+        return processResponse(response, targetType, self.requireValidation, self.requireLaxDataBinding);
     }
 
-    # Submits an HTTP request to a service with the specified HTTP verb.
-    # The `Client->submit()` function does not give out a `http:Response` as the result.
-    # Rather it returns an `http:HttpFuture` which can be used to do further interactions with the endpoint.
+    # Send an asynchronous HTTP request that does not wait for the response immediately. Can be used for non-blocking operations.
     #
-    # + httpVerb - The HTTP verb value
+    # + httpVerb - The HTTP verb value. The HTTP verb is case-sensitive. Use the `http:Method` type to specify the
+    #              the standard HTTP methods.
     # + path - The resource path
     # + message - An HTTP outbound request or any allowed payload
     # + return - An `http:HttpFuture` that represents an asynchronous service invocation or else an `http:ClientError` if the submission fails
@@ -384,7 +454,7 @@ public client isolated class Client {
         return self.httpClient->submit(httpVerb, path, req);
     }
 
-    # This just pass the request to actual network call.
+    # Get the response from a previously submitted asynchronous request. Can be used after calling `submit()` action to retrieve the actual response.
     #
     # + httpFuture - The `http:HttpFuture` related to a previous asynchronous invocation
     # + return - An `http:Response` message or else an `http: ClientError` if the invocation fails
@@ -398,7 +468,7 @@ public client isolated class Client {
         return response;
     }
 
-    # This just pass the request to actual network call.
+    # Check if the server has sent a push promise for additional resources. Should be used with HTTP/2 server push functionality.
     #
     # + httpFuture - The `http:HttpFuture` relates to a previous asynchronous invocation
     # + return - A `boolean`, which represents whether an `http:PushPromise` exists
@@ -406,7 +476,7 @@ public client isolated class Client {
         return self.httpClient->hasPromise(httpFuture);
     }
 
-    # This just pass the request to actual network call.
+    # Get the next server push promise that contains information about additional resources the server wants to send.
     #
     # + httpFuture - The `http:HttpFuture` related to a previous asynchronous invocation
     # + return - An `http:PushPromise` message or else an `http:ClientError` if the invocation fails
@@ -414,7 +484,7 @@ public client isolated class Client {
         return self.httpClient->getNextPromise(httpFuture);
     }
 
-    # Passes the request to an actual network call.
+    # Get the actual response data from a server push promise. Can be used to receive resources that the server proactively sends.
     #
     # + promise - The related `http:PushPromise`
     # + return - A promised `http:Response` message or else an `http:ClientError` if the invocation fails
@@ -426,14 +496,14 @@ public client isolated class Client {
         return response;
     }
 
-    # This just pass the request to actual network call.
+    # Reject a server push promise to decline receiving the additional resource.
     #
     # + promise - The Push Promise to be rejected
     remote isolated function rejectPromise(PushPromise promise) {
         return self.httpClient->rejectPromise(promise);
     }
 
-    # Retrieves the cookie store of the client.
+    # Get the cookie storage associated with this HTTP client. Can be used to access stored cookies for session management.
     #
     # + return - The cookie store related to the client
     public isolated function getCookieStore() returns CookieStore? {
@@ -442,8 +512,8 @@ public client isolated class Client {
         }
     }
 
-    # The circuit breaker client related method to force the circuit into a closed state in which it will allow
-    # requests regardless of the error percentage until the failure threshold exceeds.
+    # Force the circuit breaker to allow all requests through, ignoring current error rates. Can be used to manually
+    # restore service after fixing issues.
     public isolated function circuitBreakerForceClose() {
         do {
             CircuitBreakerClient cbClient = check trap <CircuitBreakerClient>self.httpClient;
@@ -454,8 +524,8 @@ public client isolated class Client {
         }
     }
 
-    # The circuit breaker client related method to force the circuit into a open state in which it will suspend all
-    # requests until `resetTime` interval exceeds.
+    # Force the circuit breaker to block all requests until the reset time expires. Can be used to manually stop
+    # requests during maintenance or known issues.
     public isolated function circuitBreakerForceOpen() {
         do {
             CircuitBreakerClient cbClient = check trap <CircuitBreakerClient>self.httpClient;
@@ -466,7 +536,7 @@ public client isolated class Client {
         }
     }
 
-    # The circuit breaker client related method to provides the `http:CircuitState` of the circuit breaker.
+    # Check the current state of the circuit breaker. Can be used to monitor the health status of your HTTP connections.
     #
     # + return - The current `http:CircuitState` of the circuit breaker
     public isolated function getCircuitBreakerCurrentState() returns CircuitState {
@@ -677,6 +747,11 @@ isolated function createResponseError(int statusCode, string reasonPhrase, map<s
     }
 }
 
+// Add proper scheme to the URL if it is not present.
+isolated function getURLWithScheme(string url, HttpClient httpClient) returns string {
+    return isAbsolute(url) ? url : (httpClient is HttpSecureClient ? HTTPS_SCHEME + url : HTTP_SCHEME + url);
+}
+
 isolated function createStatusCodeResponseBindingError(int statusCode, string reasonPhrase, map<string[]> headers,
         anydata body = ()) returns ClientError {
     if 100 <= statusCode && statusCode <= 399 {
@@ -719,8 +794,8 @@ isolated function createStatusCodeResponseDataBindingError(DataBindingErrorType 
     }
 }
 
-isolated function processResponse(Response|ClientError response, TargetType targetType, boolean requireValidation)
-        returns Response|anydata|ClientError {
+isolated function processResponse(Response|ClientError response, TargetType targetType, boolean requireValidation, boolean requireLaxDataBinding)
+        returns Response|stream<SseEvent, error?>|anydata|ClientError {
     if response is ClientError || hasHttpResponseType(targetType) {
         return response;
     }
@@ -740,31 +815,53 @@ isolated function processResponse(Response|ClientError response, TargetType targ
         }
     }
     if targetType is typedesc<anydata> {
-        anydata payload = check performDataBinding(response, targetType);
+        anydata payload = check performDataBinding(response, targetType, requireLaxDataBinding);
         if requireValidation {
             return performDataValidation(payload, targetType);
         }
         return payload;
-    } else {
-        panic error GenericClientError("invalid payload target type");
+    }
+    if targetType is typedesc<stream<SseEvent, error?>> {
+        return getSseEventStream(response);
+    }
+    if targetType is typedesc<anydata|stream<SseEvent, error?>> {
+        return error PayloadBindingClientError("payload binding failed: " +
+            "Target return type must not be a union of stream<http:SseEvent, error?> and anydata");
+    }
+    panic error GenericClientError("invalid payload target type");
+}
+
+isolated function getSseEventStream(Response response) returns stream<SseEvent, error?>|ClientError {
+    check validateEventStreamContentType(response);
+    // The streaming party can decide to send one byte at a time, hence the getByteStream method is called
+    // with an array size of 1.
+    BytesToEventStreamGenerator bytesToEventStreamGenerator = new (check response.getByteStream(1));
+    stream<SseEvent, error?> eventStream = new (bytesToEventStreamGenerator);
+    return eventStream;
+}
+
+isolated function validateEventStreamContentType(Response response) returns ClientError? {
+    string|HeaderNotFoundError contentType = response.getHeader(CONTENT_TYPE);
+    if contentType is HeaderNotFoundError || !contentType.startsWith(mime:TEXT_EVENT_STREAM) {
+        return error PayloadBindingClientError(string `invalid payload target type. The response is not of ${mime:TEXT_EVENT_STREAM} content type.`);
     }
 }
 
-isolated function processResponseNew(Response|ClientError response, typedesc<StatusCodeResponse> targetType, boolean requireValidation)
-        returns StatusCodeResponse|ClientError {
+isolated function processResponseNew(Response|ClientError response, typedesc<StatusCodeResponse> targetType, boolean requireValidation,
+    boolean requireLaxDataBinding) returns StatusCodeResponse|ClientError {
     if response is ClientError {
         return response;
     }
-    return externProcessResponseNew(response, targetType, requireValidation);
+    return externProcessResponseNew(response, targetType, requireValidation, requireLaxDataBinding);
 }
 
-isolated function externProcessResponse(Response response, TargetType targetType, boolean requireValidation)
+isolated function externProcessResponse(Response response, TargetType targetType, boolean requireValidation, boolean requireLaxDataBinding)
                                   returns Response|anydata|StatusCodeResponse|ClientError = @java:Method {
     'class: "io.ballerina.stdlib.http.api.nativeimpl.ExternResponseProcessor",
     name: "processResponse"
 } external;
 
-isolated function externProcessResponseNew(Response response, typedesc<StatusCodeResponse> targetType, boolean requireValidation)
+isolated function externProcessResponseNew(Response response, typedesc<StatusCodeResponse> targetType, boolean requireValidation, boolean requireLaxDataBinding)
                                   returns StatusCodeResponse|ClientError = @java:Method {
     'class: "io.ballerina.stdlib.http.api.nativeimpl.ExternResponseProcessor",
     name: "processResponse"

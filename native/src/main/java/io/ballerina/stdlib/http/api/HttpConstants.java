@@ -125,6 +125,7 @@ public final class HttpConstants {
     public static final BString ANN_CONFIG_ATTR_COMPRESSION = StringUtils.fromString("compression");
     public static final BString ANN_CONFIG_ATTR_COMPRESSION_ENABLE = StringUtils.fromString("enable");
     public static final BString ANN_CONFIG_ATTR_COMPRESSION_CONTENT_TYPES = StringUtils.fromString("contentTypes");
+    public static final BString ANN_CONFIG_BASE_PATH = StringUtils.fromString("basePath");
     public static final String ANN_CONFIG_ATTR_CACHE_SIZE = "cacheSize";
     public static final String ANN_CONFIG_ATTR_CACHE_VALIDITY_PERIOD = "cacheValidityPeriod";
     public static final String ANN_CONFIG_ATTR_WEBSOCKET = "webSocket";
@@ -158,6 +159,7 @@ public final class HttpConstants {
     public static final BString ANN_FIELD_RESPOND_TYPE = StringUtils.fromString("respondType");
     public static final BString ANN_FIELD_NAME = StringUtils.fromString("name");
     public static final String ANN_NAME_CACHE = "Cache";
+    public static final String ANN_NAME_QUERY = "Query";
 
     public static final String VALUE_ATTRIBUTE = "value";
 
@@ -325,13 +327,32 @@ public final class HttpConstants {
     public static final String HTTP_TRACE_LOG_ENABLED = "http.tracelog.enabled";
     public static final String HTTP_ACCESS_LOG = "http.accesslog";
     public static final String HTTP_ACCESS_LOG_ENABLED = "http.accesslog.enabled";
+    public static final String HTTP_LOG_FORMAT_JSON = "json";
+    public static final String HTTP_LOG_FORMAT_FLAT = "flat";
 
     // TraceLog and AccessLog configs
     public static final BString HTTP_LOG_CONSOLE = StringUtils.fromString("console");
+    public static final BString HTTP_LOG_FORMAT = StringUtils.fromString("format");
+    public static final BString HTTP_LOG_ATTRIBUTES = StringUtils.fromString("attributes");
     public static final BString HTTP_LOG_FILE_PATH = StringUtils.fromString("path");
     public static final BString HTTP_TRACE_LOG_HOST = StringUtils.fromString("host");
     public static final BString HTTP_TRACE_LOG_PORT = StringUtils.fromString("port");
     public static final BString HTTP_LOGGING_PROTOCOL = StringUtils.fromString("HTTP");
+
+    // AccessLog fiend names
+    public static final String ATTRIBUTE_IP = "ip";
+    public static final String ATTRIBUTE_DATE_TIME = "date_time";
+    public static final String ATTRIBUTE_REQUEST_METHOD = "request_method";
+    public static final String ATTRIBUTE_REQUEST_URI = "request_uri";
+    public static final String ATTRIBUTE_SCHEME = "scheme";
+    public static final String ATTRIBUTE_REQUEST = "request";
+    public static final String ATTRIBUTE_STATUS = "status";
+    public static final String ATTRIBUTE_REQUEST_BODY_SIZE = "request_body_size";
+    public static final String ATTRIBUTE_RESPONSE_BODY_SIZE = "response_body_size";
+    public static final String ATTRIBUTE_REQUEST_TIME = "request_time";
+    public static final String ATTRIBUTE_HTTP_REFERRER = "http_referrer";
+    public static final String ATTRIBUTE_HTTP_USER_AGENT = "http_user_agent";
+    public static final String ATTRIBUTE_HTTP_X_FORWARDED_FOR = "http_x_forwarded_for";
 
     // ResponseCacheControl struct field names
     public static final BString RES_CACHE_CONTROL_MUST_REVALIDATE_FIELD = StringUtils.fromString("mustRevalidate");
@@ -422,6 +443,10 @@ public final class HttpConstants {
     public static final BString ENDPOINT_CONFIG_GRACEFUL_STOP_TIMEOUT = StringUtils.fromString("gracefulStopTimeout");
     public static final BString ENDPOINT_CONFIG_HTTP2_INITIAL_WINDOW_SIZE = StringUtils
             .fromString("http2InitialWindowSize");
+    public static final BString ENDPOINT_CONFIG_IDLE_TIME_STALE_STATE = StringUtils.fromString(
+            "minIdleTimeInStaleState");
+    public static final BString ENDPOINT_CONFIG_TIME_BETWEEN_STALE_CHECK_RUNS = StringUtils.fromString(
+            "timeBetweenStaleEviction");
 
     public static final BString MAX_URI_LENGTH = StringUtils.fromString("maxUriLength");
     public static final BString MAX_STATUS_LINE_LENGTH = StringUtils.fromString("maxStatusLineLength");
@@ -461,6 +486,7 @@ public final class HttpConstants {
     public static final BString SECURESOCKET_CONFIG_VERIFY_CLIENT = StringUtils.fromString("verifyClient");
     public static final BString SECURESOCKET_CONFIG_CERT_VALIDATION_TYPE_OCSP_STAPLING =
             StringUtils.fromString("OCSP_STAPLING");
+    public static final BString SECURESOCKET_CONFIG_SNI_HOST_NAME = StringUtils.fromString("serverName");
 
     //Socket Config
     public static final BString SOCKET_CONFIG = StringUtils.fromString("socketConfig");
@@ -471,6 +497,14 @@ public final class HttpConstants {
     public static final BString SOCKET_CONFIG_TCP_NO_DELAY = StringUtils.fromString("tcpNoDelay");
     public static final BString SOCKET_CONFIG_SOCKET_REUSE = StringUtils.fromString("socketReuse");
     public static final BString SOCKET_CONFIG_KEEP_ALIVE = StringUtils.fromString("keepAlive");
+
+    //Service parseAsType constants
+    public static final String ENABLE_CONSTRAINT_VALIDATION = "enableConstraintValidation";
+    public static final BString ALLOW_DATA_PROJECTION = StringUtils.fromString("allowDataProjection");
+    public static final String PARSER_AS_TYPE_OPTIONS =  "Options";
+
+    public static final BString NIL_AS_OPTIONAL = StringUtils.fromString("nilAsOptionalField");
+    public static final BString ABSENT_AS_NILABLE = StringUtils.fromString("absentAsNilableType");
 
     //Client Endpoint (CallerActions)
     public static final String CLIENT_ENDPOINT_SERVICE_URI = "url";
@@ -604,6 +638,8 @@ public final class HttpConstants {
     public static final String HTTP_VERSION_1_1 = "1.1";
 
     public static final String CURRENT_TRANSACTION_CONTEXT_PROPERTY = "currentTrxContext";
+    public static final String REGEX_FOR_FIELD = "(\\$field\\$\\.)";
+    public static final String ESCAPE_SLASH = "\\\\";
 
     @Deprecated
     public static final String HTTP_MODULE_VERSION = "1.0.6";

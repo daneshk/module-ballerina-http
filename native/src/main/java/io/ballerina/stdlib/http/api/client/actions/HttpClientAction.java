@@ -19,10 +19,8 @@
 package io.ballerina.stdlib.http.api.client.actions;
 
 import io.ballerina.runtime.api.Environment;
-import io.ballerina.runtime.api.Future;
-import io.ballerina.runtime.api.PredefinedTypes;
-import io.ballerina.runtime.api.TypeTags;
-import io.ballerina.runtime.api.async.Callback;
+import io.ballerina.runtime.api.types.RecordType;
+import io.ballerina.runtime.api.types.TypeTags;
 import io.ballerina.runtime.api.utils.StringUtils;
 import io.ballerina.runtime.api.values.BArray;
 import io.ballerina.runtime.api.values.BError;
@@ -34,6 +32,7 @@ import io.ballerina.stdlib.http.api.DataContext;
 import io.ballerina.stdlib.http.api.HttpConstants;
 import io.ballerina.stdlib.http.api.HttpErrorType;
 import io.ballerina.stdlib.http.api.HttpUtil;
+import io.ballerina.stdlib.http.api.nativeimpl.ModuleUtils;
 import io.ballerina.stdlib.http.transport.contract.HttpClientConnector;
 import io.ballerina.stdlib.http.transport.message.Http2PushPromise;
 import io.ballerina.stdlib.http.transport.message.HttpCarbonMessage;
@@ -44,22 +43,23 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
-import static io.ballerina.runtime.observability.ObservabilityConstants.KEY_OBSERVER_CONTEXT;
 import static io.ballerina.stdlib.http.api.HttpConstants.AND_SIGN;
+import static io.ballerina.stdlib.http.api.HttpConstants.ANN_NAME_QUERY;
 import static io.ballerina.stdlib.http.api.HttpConstants.CLIENT_ENDPOINT_CONFIG;
 import static io.ballerina.stdlib.http.api.HttpConstants.CLIENT_ENDPOINT_SERVICE_URI;
-import static io.ballerina.stdlib.http.api.HttpConstants.CURRENT_TRANSACTION_CONTEXT_PROPERTY;
+import static io.ballerina.stdlib.http.api.HttpConstants.COLON;
 import static io.ballerina.stdlib.http.api.HttpConstants.EMPTY;
 import static io.ballerina.stdlib.http.api.HttpConstants.EQUAL_SIGN;
-import static io.ballerina.stdlib.http.api.HttpConstants.MAIN_STRAND;
-import static io.ballerina.stdlib.http.api.HttpConstants.ORIGIN_HOST;
-import static io.ballerina.stdlib.http.api.HttpConstants.POOLED_BYTE_BUFFER_FACTORY;
+import static io.ballerina.stdlib.http.api.HttpConstants.ESCAPE_SLASH;
 import static io.ballerina.stdlib.http.api.HttpConstants.QUESTION_MARK;
 import static io.ballerina.stdlib.http.api.HttpConstants.QUOTATION_MARK;
-import static io.ballerina.stdlib.http.api.HttpConstants.REMOTE_ADDRESS;
+import static io.ballerina.stdlib.http.api.HttpConstants.REGEX_FOR_FIELD;
 import static io.ballerina.stdlib.http.api.HttpConstants.SINGLE_SLASH;
-import static io.ballerina.stdlib.http.api.HttpConstants.SRC_HANDLER;
+import static io.ballerina.stdlib.http.api.nativeimpl.ExternUtils.getResult;
 
 /**
  * Utilities related to HTTP client actions.
@@ -76,9 +76,12 @@ public class HttpClientAction extends AbstractHTTPAction {
         HttpCarbonMessage outboundRequestMsg = createOutboundRequestMsg(url, config, path.getValue().
                 replaceAll(HttpConstants.REGEX, HttpConstants.SINGLE_SLASH), requestObj);
         outboundRequestMsg.setHttpMethod(httpMethod.getValue());
-        DataContext dataContext = new DataContext(env, clientConnector, requestObj, outboundRequestMsg);
-        executeNonBlockingAction(dataContext, false);
-        return null;
+        return env.yieldAndRun(() -> {
+            CompletableFuture<Object> balFuture = new CompletableFuture<>();
+            DataContext dataContext = new DataContext(env, balFuture, clientConnector, requestObj, outboundRequestMsg);
+            executeNonBlockingAction(dataContext, false);
+            return getResult(balFuture);
+        });
     }
 
     public static void rejectPromise(BObject clientObj, BObject pushPromiseObj) {
@@ -144,11 +147,9 @@ public class HttpClientAction extends AbstractHTTPAction {
     }
 
     public static Object headResource(Environment env, BObject client, BArray path, Object headers, BMap params) {
-        Object[] paramFeed = new Object[4];
+        Object[] paramFeed = new Object[2];
         paramFeed[0] = constructRequestPath(path, params);
-        paramFeed[1] = true;
-        paramFeed[2] = headers;
-        paramFeed[3] = true;
+        paramFeed[1] = headers;
         return invokeClientMethod(env, client, "head", paramFeed);
     }
 
@@ -164,98 +165,54 @@ public class HttpClientAction extends AbstractHTTPAction {
 
     public static Object execute(Environment env, BObject client, BString httpVerb, BString path, Object message,
                                  Object headers, Object mediaType, BTypedesc targetType) {
-        Object[] paramFeed = new Object[12];
+        Object[] paramFeed = new Object[6];
         paramFeed[0] = httpVerb;
-        paramFeed[1] = true;
-        paramFeed[2] = path;
-        paramFeed[3] = true;
-        paramFeed[4] = message;
-        paramFeed[5] = true;
-        paramFeed[6] = targetType;
-        paramFeed[7] = true;
-        paramFeed[8] = mediaType;
-        paramFeed[9] = true;
-        paramFeed[10] = headers;
-        paramFeed[11] = true;
+        paramFeed[1] = path;
+        paramFeed[2] = message;
+        paramFeed[3] = targetType;
+        paramFeed[4] = mediaType;
+        paramFeed[5] = headers;
         return invokeClientMethod(env, client, "processExecute", paramFeed);
     }
 
     public static Object forward(Environment env, BObject client, BString path, BObject message, BTypedesc targetType) {
-        Object[] paramFeed = new Object[6];
+        Object[] paramFeed = new Object[3];
         paramFeed[0] = path;
-        paramFeed[1] = true;
-        paramFeed[2] = message;
-        paramFeed[3] = true;
-        paramFeed[4] = targetType;
-        paramFeed[5] = true;
+        paramFeed[1] = message;
+        paramFeed[2] = targetType;
         return invokeClientMethod(env, client, "processForward", paramFeed);
     }
 
     private static Object invokeClientMethod(Environment env, BObject client, BString path, Object message,
                                              BTypedesc targetType, String methodName) {
-        Object[] paramFeed = new Object[6];
+        Object[] paramFeed = new Object[3];
         paramFeed[0] = path;
-        paramFeed[1] = true;
-        paramFeed[2] = message;
-        paramFeed[3] = true;
-        paramFeed[4] = targetType;
-        paramFeed[5] = true;
+        paramFeed[1] = message;
+        paramFeed[2] = targetType;
         return invokeClientMethod(env, client, methodName, paramFeed);
     }
 
     private static Object invokeClientMethod(Environment env, BObject client, BString path, Object message,
                                              Object mediaType, Object headers, BTypedesc targetType,
                                              String methodName) {
-        Object[] paramFeed = new Object[10];
+        Object[] paramFeed = new Object[5];
         paramFeed[0] = path;
-        paramFeed[1] = true;
-        paramFeed[2] = message;
-        paramFeed[3] = true;
-        paramFeed[4] = targetType;
-        paramFeed[5] = true;
-        paramFeed[6] = mediaType;
-        paramFeed[7] = true;
-        paramFeed[8] = headers;
-        paramFeed[9] = true;
+        paramFeed[1] = message;
+        paramFeed[2] = targetType;
+        paramFeed[3] = mediaType;
+        paramFeed[4] = headers;
         return invokeClientMethod(env, client, methodName, paramFeed);
     }
 
     private static Object invokeClientMethod(Environment env, BObject client, String methodName, Object[] paramFeed) {
-        Future balFuture = env.markAsync();
-        Map<String, Object> propertyMap = getPropertiesToPropagate(env);
-        env.getRuntime().invokeMethodAsync(client, methodName, null, null, new Callback() {
-            @Override
-            public void notifySuccess(Object result) {
-                balFuture.complete(result);
+        return env.yieldAndRun(() -> {
+            try {
+                return env.getRuntime().callMethod(client, methodName, null, paramFeed);
+            } catch (BError bError) {
+                return HttpUtil.createHttpError("client method invocation failed: " + bError.getErrorMessage(),
+                        HttpErrorType.CLIENT_ERROR, bError);
             }
-
-            @Override
-            public void notifyFailure(BError bError) {
-                BError invocationError =
-                        HttpUtil.createHttpError("client method invocation failed: " + bError.getErrorMessage(),
-                                                 HttpErrorType.CLIENT_ERROR, bError);
-                balFuture.complete(invocationError);
-            }
-        }, propertyMap, PredefinedTypes.TYPE_NULL, paramFeed);
-        return null;
-    }
-
-    private static Map<String, Object> getPropertiesToPropagate(Environment env) {
-        String[] keys = {CURRENT_TRANSACTION_CONTEXT_PROPERTY, KEY_OBSERVER_CONTEXT, SRC_HANDLER, MAIN_STRAND,
-                POOLED_BYTE_BUFFER_FACTORY, REMOTE_ADDRESS, ORIGIN_HOST};
-        Map<String, Object> subMap = new HashMap<>();
-        for (String key : keys) {
-            Object value = env.getStrandLocal(key);
-            if (value != null) {
-                subMap.put(key, value);
-            }
-        }
-        String strandParentFunctionName = Objects.isNull(env.getStrandMetadata()) ? null :
-                env.getStrandMetadata().getParentFunctionName();
-        if (Objects.nonNull(strandParentFunctionName) && strandParentFunctionName.equals("onMessage")) {
-            subMap.put(MAIN_STRAND, true);
-        }
-        return subMap;
+        });
     }
 
     private static BString constructRequestPath(BArray pathArray, BMap params) {
@@ -292,20 +249,65 @@ public class HttpClientAction extends AbstractHTTPAction {
 
     private static String constructQueryString(BMap params) {
         List<String> queryParams = new ArrayList<>();
+        Map<String, String> annotationValues = getQueryNameMapping(params);
         BString[] keys = (BString[]) params.getKeys();
         if (keys.length == 0) {
             return "";
         }
         for (BString key : keys) {
             Object value = params.get(key);
+            String queryName = key.getValue();
+            queryName = annotationValues.getOrDefault(queryName, queryName);
             String valueString = value.toString();
             if (value instanceof BArray) {
                 valueString = valueString.substring(1, valueString.length() - 1);
                 valueString = valueString.replace(QUOTATION_MARK, EMPTY);
             }
-            queryParams.add(key.getValue() + EQUAL_SIGN + valueString);
+            queryParams.add(queryName + EQUAL_SIGN + valueString);
         }
         return String.join(AND_SIGN, queryParams);
+    }
+
+    /**
+     * This util function extracts the query name with the query annotation.
+     *
+     * @param params - Parameter map
+     * @return Map of string with overridden query param names
+     */
+    private static Map<String, String> getQueryNameMapping(BMap params) {
+        Map<String, String> annotationValues = new HashMap<>();
+        RecordType queryRecord = (RecordType) params.getType();
+        BMap<BString, Object> queryFields = queryRecord.getAnnotations();
+
+        for (Map.Entry<BString, Object> qField: queryFields.entrySet()) {
+            BMap value = (BMap) qField.getValue();
+            Object[] keys = value.getKeys();
+            for (Object annotRef: keys) {
+                String refRegex = ModuleUtils.getHttpPackageIdentifier() + COLON + ANN_NAME_QUERY;
+                Pattern pattern = Pattern.compile(refRegex);
+                Matcher matcher = pattern.matcher(annotRef.toString());
+                if (matcher.find()) {
+                    BMap refValue = (BMap) value.get(annotRef);
+                    extractedFieldName(annotationValues, qField, refValue);
+                }
+            }
+        }
+        return annotationValues;
+    }
+
+    private static void extractedFieldName(Map<String, String> annotationValues, Map.Entry<BString, Object> qField,
+                                           BMap value) {
+        String[] parts = Pattern.compile(REGEX_FOR_FIELD).split(qField.getKey().getValue());
+        String fieldName = unescapeIdentifier(parts[1]);
+        Object overrideValue = value.get(HttpConstants.ANN_FIELD_NAME);
+        if (!(overrideValue instanceof BString overrideName)) {
+            return;
+        }
+        annotationValues.put(fieldName, overrideName.getValue());
+    }
+
+    public static String unescapeIdentifier(String parameterName) {
+        return parameterName.replaceAll(ESCAPE_SLASH, EMPTY);
     }
 
     private HttpClientAction() {

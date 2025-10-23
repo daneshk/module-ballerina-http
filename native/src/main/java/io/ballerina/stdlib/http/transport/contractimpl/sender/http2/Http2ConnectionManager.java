@@ -28,6 +28,7 @@ import java.util.Timer;
 import java.util.TimerTask;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * {@code Http2ConnectionManager} Manages HTTP/2 connections.
@@ -38,11 +39,18 @@ public class Http2ConnectionManager {
 
     private final Http2ChannelPool http2ChannelPool = new Http2ChannelPool();
     private final BlockingQueue<Http2ClientChannel> http2StaleClientChannels = new LinkedBlockingQueue<>();
+    private final BlockingQueue<Http2ClientChannel> http2IdleClientChannels = new LinkedBlockingQueue<>();
     private final PoolConfiguration poolConfiguration;
+    private final ReentrantLock lock = new ReentrantLock();
+
+    private enum EvictionType {
+        STALE, IDLE
+    }
 
     public Http2ConnectionManager(PoolConfiguration poolConfiguration) {
         this.poolConfiguration = poolConfiguration;
-        initiateConnectionEvictionTask();
+        initiateStaleConnectionEvictionTask();
+        initiateIdleConnectionEvictionTask();
     }
 
     /**
@@ -109,11 +117,20 @@ public class Http2ConnectionManager {
      * @param key  the route key
      * @return PerRouteConnectionPool
      */
-    private synchronized Http2ChannelPool.PerRouteConnectionPool createPerRouteConnectionPool(
+    private Http2ChannelPool.PerRouteConnectionPool createPerRouteConnectionPool(
             Http2ChannelPool pool, String key) {
-        return pool.getPerRouteConnectionPools()
-                .computeIfAbsent(key, p -> new Http2ChannelPool.PerRouteConnectionPool(
-                        this.poolConfiguration.getHttp2MaxActiveStreamsPerConnection()));
+        lock.lock();
+        try {
+            Http2ChannelPool.PerRouteConnectionPool perRouteConnectionPool = pool.getPerRouteConnectionPools().get(key);
+            if (perRouteConnectionPool == null) {
+                perRouteConnectionPool = new Http2ChannelPool.PerRouteConnectionPool(this.poolConfiguration
+                        .getHttp2MaxActiveStreamsPerConnection());
+                pool.getPerRouteConnectionPools().put(key, perRouteConnectionPool);
+            }
+            return perRouteConnectionPool;
+        } finally {
+            lock.unlock();
+        }
     }
 
     /**
@@ -124,10 +141,8 @@ public class Http2ConnectionManager {
      */
     public Http2ClientChannel fetchChannel(HttpRoute httpRoute) {
         Http2ChannelPool.PerRouteConnectionPool perRouteConnectionPool;
-        synchronized (this) {
-            perRouteConnectionPool = getOrCreatePerRoutePool(this.http2ChannelPool, generateKey(httpRoute));
-            return perRouteConnectionPool != null ? perRouteConnectionPool.fetchTargetChannel() : null;
-        }
+        perRouteConnectionPool = getOrCreatePerRoutePool(this.http2ChannelPool, generateKey(httpRoute));
+        return perRouteConnectionPool.fetchTargetChannel();
     }
 
     /**
@@ -171,7 +186,20 @@ public class Http2ConnectionManager {
         }
     }
 
-    private void initiateConnectionEvictionTask() {
+    void removeClosedChannelFromIdlePool(Http2ClientChannel http2ClientChannel) {
+        if (!http2IdleClientChannels.remove(http2ClientChannel)) {
+            logger.warn("Specified channel does not exist in the HTTP2 client channel list.");
+        }
+    }
+
+    void markClientChannelAsIdle(Http2ClientChannel http2ClientChannel) {
+        http2ClientChannel.setTimeSinceMarkedAsIdle(System.currentTimeMillis());
+        if (!http2IdleClientChannels.contains(http2ClientChannel)) {
+            http2IdleClientChannels.add(http2ClientChannel);
+        }
+    }
+
+    private void initiateStaleConnectionEvictionTask() {
         Timer timer = new Timer(true);
         TimerTask timerTask = new TimerTask() {
             @Override
@@ -179,29 +207,51 @@ public class Http2ConnectionManager {
                 http2StaleClientChannels.forEach(http2ClientChannel -> {
                     if (poolConfiguration.getMinIdleTimeInStaleState() == -1) {
                         if (!http2ClientChannel.hasInFlightMessages()) {
-                            closeChannelAndEvict(http2ClientChannel);
+                            closeChannelAndEvict(http2ClientChannel, EvictionType.STALE);
                         }
                     } else if ((System.currentTimeMillis() - http2ClientChannel.getTimeSinceMarkedAsStale()) >
                             poolConfiguration.getMinIdleTimeInStaleState()) {
-                        http2ClientChannel.getInFlightMessages().forEach((streamId, outboundMsgHolder) -> {
-                            Http2MessageStateContext messageStateContext =
-                                    outboundMsgHolder.getRequest().getHttp2MessageStateContext();
-                            if (messageStateContext != null) {
-                                messageStateContext.getSenderState().handleConnectionClose(outboundMsgHolder);
-                            }
-                        });
-                        closeChannelAndEvict(http2ClientChannel);
+                        closeInFlightRequests(http2ClientChannel);
+                        closeChannelAndEvict(http2ClientChannel, EvictionType.STALE);
                     }
                 });
-            }
-
-            public void closeChannelAndEvict(Http2ClientChannel http2ClientChannel) {
-                removeClosedChannelFromStalePool(http2ClientChannel);
-                http2ClientChannel.getConnection().close(http2ClientChannel.getChannel().newPromise());
             }
         };
         timer.schedule(timerTask, poolConfiguration.getTimeBetweenStaleEviction(),
                 poolConfiguration.getTimeBetweenStaleEviction());
+    }
+
+    private void initiateIdleConnectionEvictionTask() {
+        Timer timer = new Timer(true);
+        TimerTask timerTask = new TimerTask() {
+            @Override
+            public void run() {
+                http2IdleClientChannels.forEach(http2ClientChannel -> {
+                    if (poolConfiguration.getMinEvictableIdleTime() == -1) {
+                        if (!http2ClientChannel.hasInFlightMessages()) {
+                            closeChannelAndEvict(http2ClientChannel, EvictionType.IDLE);
+                        }
+                    } else if ((System.currentTimeMillis() - http2ClientChannel.getTimeSinceMarkedAsIdle()) >
+                                    poolConfiguration.getMinEvictableIdleTime()) {
+                        closeInFlightRequests(http2ClientChannel);
+                        removeClientChannel(http2ClientChannel.getHttpRoute(), http2ClientChannel);
+                        closeChannelAndEvict(http2ClientChannel, EvictionType.IDLE);
+                    }
+                });
+            }
+        };
+        timer.schedule(timerTask, poolConfiguration.getTimeBetweenEvictionRuns(),
+                poolConfiguration.getTimeBetweenEvictionRuns());
+    }
+
+    private static void closeInFlightRequests(Http2ClientChannel http2ClientChannel) {
+        http2ClientChannel.getInFlightMessages().forEach((streamId, outboundMsgHolder) -> {
+            Http2MessageStateContext messageStateContext =
+                    outboundMsgHolder.getRequest().getHttp2MessageStateContext();
+            if (messageStateContext != null) {
+                messageStateContext.getSenderState().handleConnectionClose(outboundMsgHolder);
+            }
+        });
     }
 
     private Http2ChannelPool.PerRouteConnectionPool fetchPerRoutePool(HttpRoute httpRoute) {
@@ -212,5 +262,14 @@ public class Http2ConnectionManager {
     private String generateKey(HttpRoute httpRoute) {
         return httpRoute.getScheme() + ":" + httpRoute.getHost() + ":" + httpRoute.getPort() + ":" +
                 httpRoute.getConfigHash();
+    }
+
+    private void closeChannelAndEvict(Http2ClientChannel http2ClientChannel, EvictionType evictionType) {
+        if (evictionType == EvictionType.STALE) {
+            removeClosedChannelFromStalePool(http2ClientChannel);
+        } else {
+            removeClosedChannelFromIdlePool(http2ClientChannel);
+        }
+        http2ClientChannel.invalidate();
     }
 }

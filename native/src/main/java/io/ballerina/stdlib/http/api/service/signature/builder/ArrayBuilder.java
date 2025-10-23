@@ -18,9 +18,9 @@
 
 package io.ballerina.stdlib.http.api.service.signature.builder;
 
-import io.ballerina.runtime.api.TypeTags;
 import io.ballerina.runtime.api.types.ArrayType;
 import io.ballerina.runtime.api.types.Type;
+import io.ballerina.runtime.api.types.TypeTags;
 import io.ballerina.runtime.api.values.BObject;
 
 /**
@@ -30,9 +30,11 @@ import io.ballerina.runtime.api.values.BObject;
  */
 public class ArrayBuilder extends AbstractPayloadBuilder {
     private final Type payloadType;
+    private final boolean laxDataBinding;
 
-    public ArrayBuilder(Type payloadType) {
+    public ArrayBuilder(Type payloadType, boolean laxDataBinding) {
         this.payloadType = payloadType;
+        this.laxDataBinding = laxDataBinding;
     }
 
     @Override
@@ -41,6 +43,6 @@ public class ArrayBuilder extends AbstractPayloadBuilder {
         if (elementType.getTag() == TypeTags.BYTE_TAG) {
             return new BinaryPayloadBuilder(payloadType).getValue(entity, readonly);
         }
-        return new JsonPayloadBuilder(payloadType).getValue(entity, readonly);
+        return new JsonPayloadBuilder(payloadType, laxDataBinding).getValue(entity, readonly);
     }
 }

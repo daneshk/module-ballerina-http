@@ -26,6 +26,7 @@ import ballerina/observe;
 #                HTTP service in resilient manner
 # + cookieStore - Stores the cookies of the client
 # + requireValidation - Enables the inbound payload validation functionalty which provided by the constraint package
+# + requireLaxDataBinding - Enables or disables relaxed data binding on the client side.
 public client isolated class StatusCodeClient {
     *StatusCodeClientObject;
 
@@ -33,6 +34,7 @@ public client isolated class StatusCodeClient {
     private CookieStore? cookieStore = ();
     final HttpClient httpClient;
     private final boolean requireValidation;
+    private final boolean requireLaxDataBinding;
 
     # Gets invoked to initialize the `client`. During initialization, the configurations provided through the `config`
     # record is used to determine which type of additional behaviours are added to the endpoint (e.g., caching,
@@ -51,6 +53,7 @@ public client isolated class StatusCodeClient {
         }
         self.httpClient = check initialize(url, config, self.cookieStore);
         self.requireValidation = config.validation;
+        self.requireLaxDataBinding = config.laxDataBinding;
         return;
     }
 
@@ -93,7 +96,7 @@ public client isolated class StatusCodeClient {
         if observabilityEnabled && response is Response {
             addObservabilityInformation(path, HTTP_POST, response.statusCode, self.url);
         }
-        return processResponseNew(response, targetType, self.requireValidation);
+        return processResponseNew(response, targetType, self.requireValidation, self.requireLaxDataBinding);
     }
 
     # The client resource function to send HTTP PUT requests to HTTP endpoints.
@@ -135,7 +138,7 @@ public client isolated class StatusCodeClient {
         if observabilityEnabled && response is Response {
             addObservabilityInformation(path, HTTP_PUT, response.statusCode, self.url);
         }
-        return processResponseNew(response, targetType, self.requireValidation);
+        return processResponseNew(response, targetType, self.requireValidation, self.requireLaxDataBinding);
     }
 
     # The client resource function to send HTTP PATCH requests to HTTP endpoints.
@@ -177,7 +180,7 @@ public client isolated class StatusCodeClient {
         if observabilityEnabled && response is Response {
             addObservabilityInformation(path, HTTP_PATCH, response.statusCode, self.url);
         }
-        return processResponseNew(response, targetType, self.requireValidation);
+        return processResponseNew(response, targetType, self.requireValidation, self.requireLaxDataBinding);
     }
 
     # The client resource function to send HTTP DELETE requests to HTTP endpoints.
@@ -219,7 +222,7 @@ public client isolated class StatusCodeClient {
         if observabilityEnabled && response is Response {
             addObservabilityInformation(path, HTTP_DELETE, response.statusCode, self.url);
         }
-        return processResponseNew(response, targetType, self.requireValidation);
+        return processResponseNew(response, targetType, self.requireValidation, self.requireLaxDataBinding);
     }
 
     # The client resource function to send HTTP HEAD requests to HTTP endpoints.
@@ -281,7 +284,7 @@ public client isolated class StatusCodeClient {
         if observabilityEnabled && response is Response {
             addObservabilityInformation(path, HTTP_GET, response.statusCode, self.url);
         }
-        return processResponseNew(response, targetType, self.requireValidation);
+        return processResponseNew(response, targetType, self.requireValidation, self.requireLaxDataBinding);
     }
 
     # The client resource function to send HTTP OPTIONS requests to HTTP endpoints.
@@ -317,7 +320,7 @@ public client isolated class StatusCodeClient {
         if observabilityEnabled && response is Response {
             addObservabilityInformation(path, HTTP_OPTIONS, response.statusCode, self.url);
         }
-        return processResponseNew(response, targetType, self.requireValidation);
+        return processResponseNew(response, targetType, self.requireValidation, self.requireLaxDataBinding);
     }
 
     # Invokes an HTTP call with the specified HTTP verb.
@@ -345,7 +348,7 @@ public client isolated class StatusCodeClient {
         if observabilityEnabled && response is Response {
             addObservabilityInformation(path, httpVerb, response.statusCode, self.url);
         }
-        return processResponseNew(response, targetType, self.requireValidation);
+        return processResponseNew(response, targetType, self.requireValidation, self.requireLaxDataBinding);
     }
 
     # The `Client.forward()` function can be used to invoke an HTTP call with inbound request's HTTP verb
@@ -366,14 +369,15 @@ public client isolated class StatusCodeClient {
         if observabilityEnabled && response is Response {
             addObservabilityInformation(path, request.method, response.statusCode, self.url);
         }
-        return processResponseNew(response, targetType, self.requireValidation);
+        return processResponseNew(response, targetType, self.requireValidation, self.requireLaxDataBinding);
     }
 
     # Submits an HTTP request to a service with the specified HTTP verb.
     # The `Client->submit()` function does not give out a `http:Response` as the result.
     # Rather it returns an `http:HttpFuture` which can be used to do further interactions with the endpoint.
     #
-    # + httpVerb - The HTTP verb value
+    # + httpVerb - The HTTP verb value. The HTTP verb is case-sensitive. Use the `http:Method` type to specify the
+    #              the standard HTTP methods.
     # + path - The resource path
     # + message - An HTTP outbound request or any allowed payload
     # + return - An `http:HttpFuture` that represents an asynchronous service invocation or else an `http:ClientError` if the submission fails

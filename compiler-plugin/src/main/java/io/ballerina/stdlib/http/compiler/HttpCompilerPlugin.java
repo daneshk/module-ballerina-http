@@ -23,6 +23,7 @@ import io.ballerina.projects.plugins.CompilerPlugin;
 import io.ballerina.projects.plugins.CompilerPluginContext;
 import io.ballerina.projects.plugins.codeaction.CodeAction;
 import io.ballerina.projects.plugins.completion.CompletionProvider;
+import io.ballerina.scan.ScannerContext;
 import io.ballerina.stdlib.http.compiler.codeaction.AddHeaderParameterCodeAction;
 import io.ballerina.stdlib.http.compiler.codeaction.AddInterceptorRemoteMethodCodeAction;
 import io.ballerina.stdlib.http.compiler.codeaction.AddInterceptorResourceMethodCodeAction;
@@ -32,10 +33,15 @@ import io.ballerina.stdlib.http.compiler.codeaction.AddResponseContentTypeCodeAc
 import io.ballerina.stdlib.http.compiler.codeaction.ChangeHeaderParamTypeToStringArrayCodeAction;
 import io.ballerina.stdlib.http.compiler.codeaction.ChangeHeaderParamTypeToStringCodeAction;
 import io.ballerina.stdlib.http.compiler.codeaction.ChangeReturnTypeWithCallerCodeAction;
+import io.ballerina.stdlib.http.compiler.codeaction.ImplementServiceContract;
 import io.ballerina.stdlib.http.compiler.codemodifier.HttpServiceModifier;
 import io.ballerina.stdlib.http.compiler.completion.HttpServiceBodyContextProvider;
+import io.ballerina.stdlib.http.compiler.staticcodeanalyzer.HttpStaticCodeAnalyzer;
 
 import java.util.List;
+import java.util.Map;
+
+import static io.ballerina.stdlib.http.compiler.Constants.SCANNER_CONTEXT;
 
 /**
  * The compiler plugin implementation for Ballerina Http package.
@@ -44,10 +50,16 @@ public class HttpCompilerPlugin extends CompilerPlugin {
 
     @Override
     public void init(CompilerPluginContext context) {
-        context.addCodeModifier(new HttpServiceModifier());
-        context.addCodeAnalyzer(new HttpServiceAnalyzer());
+        Map<String, Object> ctxData = context.userData();
+        ctxData.put("HTTP_CODE_MODIFIER_EXECUTED", false);
+        context.addCodeModifier(new HttpServiceModifier(ctxData));
+        context.addCodeAnalyzer(new HttpServiceAnalyzer(ctxData));
         getCodeActions().forEach(context::addCodeAction);
         getCompletionProviders().forEach(context::addCompletionProvider);
+        Object object = context.userData().get(SCANNER_CONTEXT);
+        if (object instanceof ScannerContext scannerContext) {
+            context.addCodeAnalyzer(new HttpStaticCodeAnalyzer(scannerContext.getReporter()));
+        }
     }
 
     private List<CodeAction> getCodeActions() {
@@ -60,7 +72,8 @@ public class HttpCompilerPlugin extends CompilerPlugin {
                 new AddResponseContentTypeCodeAction(),
                 new AddResponseCacheConfigCodeAction(),
                 new AddInterceptorResourceMethodCodeAction(),
-                new AddInterceptorRemoteMethodCodeAction()
+                new AddInterceptorRemoteMethodCodeAction(),
+                new ImplementServiceContract()
         );
     }
 

@@ -20,6 +20,7 @@ package io.ballerina.stdlib.http.transport.contract.config;
 
 import io.ballerina.stdlib.http.transport.contractimpl.common.Util;
 import io.ballerina.stdlib.http.transport.contractimpl.common.ssl.SSLConfig;
+import io.netty.handler.ssl.SslContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -39,6 +40,7 @@ import static io.ballerina.stdlib.http.transport.contract.Constants.SERVER_SUPPO
 import static io.ballerina.stdlib.http.transport.contract.Constants.SERVER_SUPPORTED_SNIMATCHERS;
 import static io.ballerina.stdlib.http.transport.contract.Constants.SERVER_SUPPORT_CIPHERS;
 import static io.ballerina.stdlib.http.transport.contract.Constants.SERVER_SUPPORT_SSL_PROTOCOLS;
+import static io.ballerina.stdlib.http.transport.contract.Constants.SNI_SERVER_NAME;
 import static io.ballerina.stdlib.http.transport.contract.Constants.TLS_PROTOCOL;
 /**
  * SSL configuration for HTTP connection.
@@ -169,6 +171,10 @@ public class SslConfiguration {
         sslConfig.setHandshakeTimeOut(handshakeTimeOut);
     }
 
+    public void setSslContext(SslContext sslContext) {
+        sslConfig.setSslContext(sslContext);
+    }
+
     public void disableSsl() {
         sslConfig.disableSsl();
     }
@@ -244,6 +250,7 @@ public class SslConfiguration {
     }
 
     private SSLConfig getSSLConfigForSender() {
+        setSslParameters();
         if (sslConfig.isDisableSsl() || sslConfig.useJavaDefaults()) {
             return sslConfig;
         }
@@ -264,7 +271,10 @@ public class SslConfiguration {
         sslConfig.setSSLProtocol(sslProtocol);
         String tlsStoreType = sslConfig.getTLSStoreType() != null ? sslConfig.getTLSStoreType() : JKS;
         sslConfig.setTLSStoreType(tlsStoreType);
+        return sslConfig;
+    }
 
+    private void setSslParameters() {
         if (parameters != null) {
             for (Parameter parameter : parameters) {
                 switch (parameter.getName()) {
@@ -277,12 +287,14 @@ public class SslConfiguration {
                     case CLIENT_ENABLE_SESSION_CREATION:
                         sslConfig.setEnableSessionCreation(Boolean.parseBoolean(parameter.getValue()));
                         break;
+                    case SNI_SERVER_NAME:
+                        sslConfig.setSniHostName(parameter.getValue());
+                        break;
                     default:
                         //do nothing
                         break;
                 }
             }
         }
-        return sslConfig;
     }
 }

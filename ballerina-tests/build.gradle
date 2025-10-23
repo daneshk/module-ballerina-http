@@ -215,8 +215,8 @@ task ballerinaTest {
                                 " ${parallelTestFlag} ${testParams} ${groupParams} ${disableGroups} ${windowsDisableGroups}" +
                                 "  ${debugParams} && exit %%ERRORLEVEL%%"
                     } else {
-                        commandLine 'sh', '-c', "${distributionBinPath}/bal test ${graalvmFlag} ${parallelTestFlag} ${testParams}" +
-                                " ${groupParams} ${disableGroups} ${debugParams}"
+                        commandLine 'sh', '-c', "${balJavaDebugParam} ${distributionBinPath}/bal test ${graalvmFlag} " +
+                                "${parallelTestFlag} ${testParams} ${groupParams} ${disableGroups} ${debugParams}"
                     }
                 }
                 if (project.hasProperty('balGraalVMTest')) {
@@ -261,7 +261,7 @@ task startLdapServer() {
             if (!stdOut.toString().contains("openldap-server")) {
                 println "Starting LDAP server."
                 exec {
-                    commandLine 'sh', '-c', "docker-compose -f $project.projectDir/resources/openldap/docker-compose.yml up -d"
+                    commandLine 'sh', '-c', "docker compose -f $project.projectDir/resources/openldap/compose.yml up -d"
                     standardOutput = stdOut
                 }
                 println stdOut.toString()

@@ -141,7 +141,7 @@ client isolated class CircuitBreakerClient {
             return error GenericClientError("Circuit breaker 'timeWindow' value should be greater" +
                 " than the 'bucketSize' value.");
         }
-        self.url = url;
+        self.url = getURLWithScheme(url, httpClient);
         self.circuitBreakerInferredConfig = circuitBreakerInferredConfig.cloneReadOnly();
         self.httpClient = httpClient;
         self.circuitHealth = circuitHealth.clone();
@@ -306,7 +306,8 @@ client isolated class CircuitBreakerClient {
     # The `CircuitBreakerClient.submit()` function does not give out a `Response` as the result.
     # Rather it returns an `http:HttpFuture` which can be used to do further interactions with the endpoint.
     #
-    # + httpVerb - The HTTP verb value
+    # + httpVerb - The HTTP verb value. The HTTP verb is case-sensitive. Use the `http:Method` type to specify the
+    #              the standard HTTP methods.
     # + path - The resource path
     # + message - An HTTP outbound request or any allowed payload
     # + return - An `http:HttpFuture` that represents an asynchronous service invocation or else an `http:ClientError` if the submission

@@ -18,10 +18,10 @@
 
 package io.ballerina.stdlib.http.api.service.signature;
 
-import io.ballerina.runtime.api.PredefinedTypes;
 import io.ballerina.runtime.api.creators.TypeCreator;
 import io.ballerina.runtime.api.creators.ValueCreator;
 import io.ballerina.runtime.api.types.MapType;
+import io.ballerina.runtime.api.types.PredefinedTypes;
 import io.ballerina.runtime.api.types.ResourceMethodType;
 import io.ballerina.runtime.api.types.Type;
 import io.ballerina.runtime.api.utils.IdentifierUtils;
@@ -47,6 +47,7 @@ import static io.ballerina.stdlib.http.api.HttpConstants.ANN_NAME_CACHE;
 import static io.ballerina.stdlib.http.api.HttpConstants.ANN_NAME_CALLER_INFO;
 import static io.ballerina.stdlib.http.api.HttpConstants.ANN_NAME_HEADER;
 import static io.ballerina.stdlib.http.api.HttpConstants.ANN_NAME_PAYLOAD;
+import static io.ballerina.stdlib.http.api.HttpConstants.ANN_NAME_QUERY;
 import static io.ballerina.stdlib.http.api.HttpConstants.COLON;
 import static io.ballerina.stdlib.http.api.HttpConstants.PROTOCOL_HTTP;
 import static io.ballerina.stdlib.http.api.HttpUtil.getParameterTypes;
@@ -73,6 +74,7 @@ public class ParamHandler {
     private final AllQueryParams queryParams = new AllQueryParams();
     private final AllHeaderParams headerParams = new AllHeaderParams();
     private final boolean constraintValidation;
+    private final boolean laxDataBinding;
 
     private static final String PARAM_ANNOT_PREFIX = "$param$.";
     private static final MapType MAP_TYPE = TypeCreator.createMapType(
@@ -89,12 +91,15 @@ public class ParamHandler {
             + ANN_NAME_CALLER_INFO;
     public static final String CACHE_ANNOTATION = ModuleUtils.getHttpPackageIdentifier() + COLON
             + ANN_NAME_CACHE;
+    public static final String QUERY_ANNOTATION = ModuleUtils.getHttpPackageIdentifier() + COLON + ANN_NAME_QUERY;
 
-    public ParamHandler(ResourceMethodType resource, int pathParamCount, boolean constraintValidation) {
+    public ParamHandler(ResourceMethodType resource, int pathParamCount, boolean constraintValidation,
+                        boolean laxDataBinding) {
         this.resource = resource;
         this.pathParamCount = pathParamCount;
         this.paramTypes = getParameterTypes(resource);
         this.constraintValidation = constraintValidation;
+        this.laxDataBinding = laxDataBinding;
         populatePathParamTokens(resource, pathParamCount);
         populatePayloadAndHeaderParamTokens(resource);
         validateSignatureParams();
@@ -200,7 +205,7 @@ public class ParamHandler {
                 String key = ((BString) objKey).getValue();
                 if (PAYLOAD_ANNOTATION.equals(key)) {
                     if (payloadParam == null) {
-                        createPayloadParam(paramName, annotations, constraintValidation);
+                        createPayloadParam(paramName, annotations, constraintValidation, laxDataBinding);
                     } else {
                         throw HttpUtil.createHttpError(
                                 "invalid multiple '" + PROTOCOL_HTTP + COLON + ANN_NAME_PAYLOAD + "' annotation usage");
@@ -235,8 +240,9 @@ public class ParamHandler {
         return PAYLOAD_ANNOTATION.equals(key) || CALLER_ANNOTATION.equals(key) || HEADER_ANNOTATION.equals(key);
     }
 
-    private void createPayloadParam(String paramName, BMap annotations, boolean constraintValidation) {
-        this.payloadParam = new PayloadParam(paramName, constraintValidation);
+    private void createPayloadParam(String paramName, BMap annotations, boolean constraintValidation,
+                                    boolean laxDataBinding) {
+        this.payloadParam = new PayloadParam(paramName, constraintValidation, laxDataBinding);
         BMap mapValue = annotations.getMapValue(StringUtils.fromString(PAYLOAD_ANNOTATION));
         Object mediaType = mapValue.get(HttpConstants.ANN_FIELD_MEDIA_TYPE);
         if (mediaType instanceof BString) {
@@ -272,9 +278,26 @@ public class ParamHandler {
 
     private void createQueryParam(int index, ResourceMethodType balResource, Type originalType) {
         io.ballerina.runtime.api.types.Parameter parameter = balResource.getParameters()[index];
-        QueryParam queryParam = new QueryParam(originalType, HttpUtil.unescapeAndEncodeValue(parameter.name), index,
-                parameter.isDefault, constraintValidation);
+        String paramName = parameter.name;
+        BMap annotations = (BMap) balResource.getAnnotation(
+                StringUtils.fromString(PARAM_ANNOT_PREFIX + IdentifierUtils.escapeSpecialCharacters(paramName)));
+        if (annotations != null) {
+            String queryParamName = getQueryParamName(paramName, annotations);
+            paramName = queryParamName.isBlank() ? paramName : queryParamName;
+        }
+        paramName = HttpUtil.unescapeAndEncodeValue(paramName);
+        QueryParam queryParam = new QueryParam(originalType, paramName, index, parameter.isDefault,
+                constraintValidation);
         this.queryParams.add(queryParam);
+    }
+
+    private static String getQueryParamName(String paramName, BMap annotations) {
+        BMap mapValue = annotations.getMapValue(StringUtils.fromString(QUERY_ANNOTATION));
+        Object queryName = mapValue.get(HttpConstants.ANN_FIELD_NAME);
+        if (queryName instanceof BString query) {
+            return query.getValue();
+        }
+        return paramName;
     }
 
     public boolean isPayloadBindingRequired() {

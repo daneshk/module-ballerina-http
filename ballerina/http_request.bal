@@ -21,6 +21,7 @@ import ballerina/log;
 import ballerina/mime;
 import ballerina/jballerina.java;
 import ballerina/url;
+import ballerina/data.jsondata;
 
 # Represents an HTTP request.
 #
@@ -44,11 +45,13 @@ public class Request {
 
     private mime:Entity? entity = ();
     private boolean dirtyRequest;
+    private boolean redirected;
     boolean noEntityBody;
 
     public isolated function init() {
         self.dirtyRequest = false;
         self.noEntityBody = false;
+        self.redirected = false;
         self.entity = self.createNewEntity();
     }
 
@@ -164,12 +167,17 @@ public class Request {
         externRequestSetHeader(self, headerName, headerValue);
     }
 
-    # Adds the specified header to the request. Existing header values are not replaced. Panic if an illegal header is passed.
+    # Adds the specified header to the request. Existing header values are not replaced, except for the `Content-Type`
+    # header. In the case of the `Content-Type` header, the existing value is replaced with the specified value.
+    # Panic if an illegal header is passed.
     #
     # + headerName - The header name
     # + headerValue - The header value
     public isolated function addHeader(string headerName, string headerValue) {
-        externRequestAddHeader(self, headerName, headerValue);
+        if headerName.equalsIgnoreCaseAscii(CONTENT_TYPE) {
+            return externRequestSetHeader(self, headerName, headerValue);
+        }
+        return externRequestAddHeader(self, headerName, headerValue);
     }
 
     # Removes the specified header from the request.
@@ -409,14 +417,30 @@ public class Request {
 
     # Sets a `json` as the payload. If the content-type header is not set then this method set content-type
     # headers with the default content-type, which is `application/json`. Any existing content-type can be
-    # overridden by passing the content-type as an optional parameter.
+    # overridden by passing the content-type as an optional parameter. If the given payload is a record type with 
+    # the `@jsondata:Name` annotation, the `jsondata:toJson` function internally converts the record to JSON
     #
     # + payload - The `json` payload
     # + contentType - The content type of the payload. This is an optional parameter.
     #                 The `application/json` is the default value
     public isolated function setJsonPayload(json payload, string? contentType = ()) {
         mime:Entity entity = self.getEntityWithoutBodyAndHeaders();
-        setJson(entity, payload, self.getContentType(), contentType);
+        setJson(entity, jsondata:toJson(payload), self.getContentType(), contentType);
+        self.setEntityAndUpdateContentTypeHeader(entity);
+    }
+
+    # Sets a `anydata` type payload, as a `json` payload. If the content-type header is not set then this method set content-type
+    # headers with the default content-type, which is `application/json`. Any existing content-type can be
+    # overridden by passing the content-type as an optional parameter. If the given payload is a record type 
+    # with the `@jsondata:Name` annotation, the `jsondata:toJson` function processes the name and populates 
+    # the JSON according to the annotation's details.
+    #
+    # + payload - The `json` payload
+    # + contentType - The content type of the payload. This is an optional parameter.
+    #                 The `application/json` is the default value
+    isolated function setAnydataAsJsonPayload(anydata payload, string? contentType = ()) {
+        mime:Entity entity = self.getEntityWithoutBodyAndHeaders();
+        setJson(entity, jsondata:toJson(payload), self.getContentType(), contentType);
         self.setEntityAndUpdateContentTypeHeader(entity);
     }
 
@@ -514,11 +538,13 @@ public class Request {
     # as an optional parameter. If the content type parameter is not provided then the default value derived
     # from the payload will be used as content-type only when there are no existing content-type header.
     #
-    # + payload - Payload can be of type `string`, `xml`, `json`, `byte[]`, `stream<byte[], io:Error?>`
-    #             or `Entity[]` (i.e., a set of body parts).
+    # + payload - Payload can be of type `string`, `xml`, `byte[]`, `json`, `stream<byte[], io:Error?>`,
+    #             `Entity[]` (i.e., a set of body parts) or any other value of type `anydata` which will
+    #             be converted to `json` using the `toJson` method.
     # + contentType - Content-type to be used with the payload. This is an optional parameter
-    public isolated function setPayload(string|xml|json|byte[]|mime:Entity[]|stream<byte[], io:Error?> payload,
+    public isolated function setPayload(anydata|mime:Entity[]|stream<byte[], io:Error?> payload,
             string? contentType = ()) {
+
         if contentType is string {
             error? err = self.setContentType(contentType);
             if err is error {
@@ -538,6 +564,8 @@ public class Request {
             self.setByteStream(payload);
         } else if payload is mime:Entity[] {
             self.setBodyParts(payload);
+        } else if payload is anydata {
+            self.setAnydataAsJsonPayload(payload);
         } else {
             panic error Error("invalid entity body type." +
                 "expected one of the types: string|xml|json|byte[]|mime:Entity[]|stream<byte[],io:Error?>");
@@ -633,6 +661,14 @@ public class Request {
             cookiesInRequest = parseCookieHeader(cookieValue);
         }
         return cookiesInRequest;
+    }
+
+    isolated function isRedirected() returns boolean {
+        return self.redirected;
+    }
+
+    isolated function markAsRedirected() {
+        self.redirected = true;
     }
 }
 

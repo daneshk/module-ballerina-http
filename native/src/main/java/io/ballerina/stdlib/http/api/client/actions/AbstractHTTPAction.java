@@ -19,10 +19,10 @@
 package io.ballerina.stdlib.http.api.client.actions;
 
 import io.ballerina.runtime.api.Environment;
-import io.ballerina.runtime.api.PredefinedTypes;
 import io.ballerina.runtime.api.creators.TypeCreator;
 import io.ballerina.runtime.api.creators.ValueCreator;
 import io.ballerina.runtime.api.types.ArrayType;
+import io.ballerina.runtime.api.types.PredefinedTypes;
 import io.ballerina.runtime.api.utils.StringUtils;
 import io.ballerina.runtime.api.values.BArray;
 import io.ballerina.runtime.api.values.BError;
@@ -290,6 +290,8 @@ public abstract class AbstractHTTPAction {
         }
         outboundRequestMsg.setProperty(HttpConstants.ORIGIN_HOST,
                 dataContext.getEnvironment().getStrandLocal(HttpConstants.ORIGIN_HOST));
+        outboundRequestMsg.setProperty(HttpConstants.INBOUND_MESSAGE,
+                dataContext.getEnvironment().getStrandLocal(HttpConstants.INBOUND_MESSAGE));
         sendOutboundRequest(dataContext, outboundRequestMsg, async);
     }
 
@@ -481,7 +483,7 @@ public abstract class AbstractHTTPAction {
 
     private static class HTTPClientConnectorListener implements HttpClientConnectorListener {
 
-        private DataContext dataContext;
+        private final DataContext dataContext;
 
         private HTTPClientConnectorListener(DataContext dataContext) {
             this.dataContext = dataContext;

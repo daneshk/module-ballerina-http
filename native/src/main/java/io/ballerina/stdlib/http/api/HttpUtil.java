@@ -20,10 +20,7 @@ package io.ballerina.stdlib.http.api;
 
 import io.ballerina.runtime.api.Environment;
 import io.ballerina.runtime.api.Module;
-import io.ballerina.runtime.api.PredefinedTypes;
 import io.ballerina.runtime.api.Runtime;
-import io.ballerina.runtime.api.TypeTags;
-import io.ballerina.runtime.api.async.Callback;
 import io.ballerina.runtime.api.creators.ErrorCreator;
 import io.ballerina.runtime.api.creators.ValueCreator;
 import io.ballerina.runtime.api.types.Field;
@@ -33,6 +30,7 @@ import io.ballerina.runtime.api.types.ObjectType;
 import io.ballerina.runtime.api.types.RecordType;
 import io.ballerina.runtime.api.types.Type;
 import io.ballerina.runtime.api.types.TypeId;
+import io.ballerina.runtime.api.types.TypeTags;
 import io.ballerina.runtime.api.utils.JsonUtils;
 import io.ballerina.runtime.api.utils.StringUtils;
 import io.ballerina.runtime.api.utils.TypeUtils;
@@ -78,6 +76,7 @@ import io.ballerina.stdlib.http.transport.contractimpl.sender.channel.pool.PoolC
 import io.ballerina.stdlib.http.transport.message.Http2PushPromise;
 import io.ballerina.stdlib.http.transport.message.HttpCarbonMessage;
 import io.ballerina.stdlib.http.transport.message.HttpMessageDataStreamer;
+import io.ballerina.stdlib.http.uri.URIUtil;
 import io.ballerina.stdlib.io.utils.IOConstants;
 import io.ballerina.stdlib.io.utils.IOUtils;
 import io.ballerina.stdlib.mime.util.EntityBodyChannel;
@@ -85,6 +84,7 @@ import io.ballerina.stdlib.mime.util.EntityBodyHandler;
 import io.ballerina.stdlib.mime.util.EntityHeaderHandler;
 import io.ballerina.stdlib.mime.util.EntityWrapper;
 import io.ballerina.stdlib.mime.util.HeaderUtil;
+import io.ballerina.stdlib.mime.util.MimeConstants;
 import io.ballerina.stdlib.mime.util.MimeUtil;
 import io.ballerina.stdlib.mime.util.MultipartDataSource;
 import io.ballerina.stdlib.mime.util.MultipartDecoder;
@@ -117,7 +117,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
-import java.util.concurrent.CountDownLatch;
 import java.util.stream.Collectors;
 
 import static io.ballerina.runtime.api.constants.RuntimeConstants.BALLERINA_VERSION;
@@ -206,7 +205,7 @@ public class HttpUtil {
     private static final String CHUNKING_CONFIG = "chunking_config";
     private static final String ILLEGAL_FUNCTION_INVOKED = "illegal respond: response has already been sent";
     private static final String JAVA_CONFIG_TLS_NAMED_GROUPS = "jdk.tls.namedGroups";
-    private static final String[] DEFAULT_NAMED_GROUPS = { "X25519Kyber768Draft00", "x25519", "secp256r1",
+    private static final String[] DEFAULT_NAMED_GROUPS = { "X25519MLKEM768", "x25519", "secp256r1",
             "secp384r1", "secp521r1" };
 
     /**
@@ -401,7 +400,11 @@ public class HttpUtil {
         Service httpService = (Service) connectionObj.getNativeData(HttpConstants.HTTP_SERVICE);
         if (httpService != null) {
             HttpUtil.setCompressionHeaders(httpService.getCompressionConfig(), inboundRequestMsg, outboundResponseMsg);
-            HttpUtil.setChunkingHeader(httpService.getChunkingConfig(), outboundResponseMsg);
+            if (HttpUtil.hasEventStreamContentType(outboundResponseMsg)) {
+                HttpUtil.setChunkingHeader(HttpConstants.ALWAYS, outboundResponseMsg);
+            } else {
+                HttpUtil.setChunkingHeader(httpService.getChunkingConfig(), outboundResponseMsg);
+            }
             if (httpService.getMediaTypeSubtypePrefix() != null) {
                 HttpUtil.setMediaTypeSubtypePrefix(httpService.getMediaTypeSubtypePrefix(), outboundResponseMsg);
             }
@@ -1367,7 +1370,7 @@ public class HttpUtil {
         double minIdleTimeInStaleState =
                 ((BDecimal) poolRecord.get(HttpConstants.CONNECTION_POOLING_IDLE_TIME_STALE_STATE)).floatValue();
         poolConfiguration.setMinIdleTimeInStaleState(minIdleTimeInStaleState < -1 ? -1 :
-                (long) minEvictableIdleTime * 1000);
+                (long) minIdleTimeInStaleState * 1000);
 
         double timeBetweenStaleEviction =
                 ((BDecimal) poolRecord.get(HttpConstants.CONNECTION_POOLING_TIME_BETWEEN_STALE_CHECK_RUNS))
@@ -1407,13 +1410,7 @@ public class HttpUtil {
         }
         Object cert = secureSocket.get(HttpConstants.SECURESOCKET_CONFIG_CERT);
         if (cert == null) {
-            BMap<BString, Object> key = getBMapValueIfPresent(secureSocket, HttpConstants.SECURESOCKET_CONFIG_KEY);
-            if (key != null) {
-                senderConfiguration.useJavaDefaults();
-            } else {
-                throw createHttpError("Need to configure cert with client SSL certificates file",
-                        HttpErrorType.SSL_ERROR);
-            }
+            senderConfiguration.useJavaDefaults();
         } else {
             evaluateCertField(cert, senderConfiguration);
         }
@@ -1586,6 +1583,19 @@ public class HttpUtil {
         listenerConfiguration.setPipeliningEnabled(true); //Pipelining is enabled all the time
         listenerConfiguration.setHttp2InitialWindowSize(endpointConfig
                 .getIntValue(ENDPOINT_CONFIG_HTTP2_INITIAL_WINDOW_SIZE).intValue());
+
+        double minIdleTimeInStaleState =
+                ((BDecimal) endpointConfig.get(HttpConstants.ENDPOINT_CONFIG_IDLE_TIME_STALE_STATE)).floatValue();
+        listenerConfiguration.setMinIdleTimeInStaleState(minIdleTimeInStaleState < -1 ? -1 :
+                (long) minIdleTimeInStaleState * 1000);
+
+        double timeBetweenStaleEviction =
+                ((BDecimal) endpointConfig.get(HttpConstants.ENDPOINT_CONFIG_TIME_BETWEEN_STALE_CHECK_RUNS))
+                        .floatValue();
+        if (timeBetweenStaleEviction > 0) {
+            listenerConfiguration.setTimeBetweenStaleEviction((long) timeBetweenStaleEviction * 1000);
+        }
+
         return listenerConfiguration;
     }
 
@@ -1627,30 +1637,17 @@ public class HttpUtil {
     }
 
     public static void populateInterceptorServicesFromListener(BObject serviceEndpoint, Runtime runtime) {
-        final CountDownLatch latch = new CountDownLatch(1);
         final BArray[] interceptorResponse = new BArray[1];
-        Callback interceptorCallback = new Callback() {
-            @Override
-            public void notifySuccess(Object result) {
-                if (result instanceof BArray) {
-                    interceptorResponse[0] = (BArray) result;
-                } else {
-                    ((BError) result).printStackTrace();
-                }
-                latch.countDown();
-            }
-            @Override
-            public void notifyFailure(BError bError) {
-                bError.printStackTrace();
-                System.exit(1);
-            }
-        };
-        runtime.invokeMethodAsyncSequentially(serviceEndpoint, CREATE_INTERCEPTORS_FUNCTION_NAME, null, null,
-                interceptorCallback, null, PredefinedTypes.TYPE_ANY, null, true);
         try {
-            latch.await();
-        } catch (InterruptedException exception) {
-            log.warn("Interrupted before receiving the interceptor response");
+            Object result =  runtime.callMethod(serviceEndpoint, CREATE_INTERCEPTORS_FUNCTION_NAME, null);
+            if (result instanceof BArray) {
+                interceptorResponse[0] = (BArray) result;
+            } else {
+                ((BError) result).printStackTrace();
+            }
+        } catch (BError bError) {
+            bError.printStackTrace();
+            System.exit(1);
         }
         if (interceptorResponse[0] == null) {
             return;
@@ -1898,6 +1895,11 @@ public class HttpUtil {
         Parameter enableSessionCreationParam = new Parameter(HttpConstants.SECURESOCKET_CONFIG_SHARE_SESSION.getValue(),
                                                              enableSessionCreation);
         paramList.add(enableSessionCreationParam);
+        if (secureSocket.containsKey(HttpConstants.SECURESOCKET_CONFIG_SNI_HOST_NAME)) {
+            Parameter sniHostNameParam = new Parameter(HttpConstants.SECURESOCKET_CONFIG_SNI_HOST_NAME.getValue(),
+                    String.valueOf(secureSocket.getStringValue(HttpConstants.SECURESOCKET_CONFIG_SNI_HOST_NAME)));
+            paramList.add(sniHostNameParam);
+        }
     }
 
     private static BMap<BString, Object> getBMapValueIfPresent(BMap<BString, Object> map, BString key) {
@@ -1915,19 +1917,31 @@ public class HttpUtil {
     }
 
     /**
-     * This method will remove the escape character "\" from a string and encode it. This is used for both basePath and
-     * resource path sanitization. When the special chars are present in those paths, user can escape them in order to
-     * get through the compilation phrase. Then listener sanitize and register paths in both basePath map and resource
-     * syntax tree using encoded values as during the dispatching, the path matches with raw path.
+     * This method will remove the escape character "\" and identifier quote character "'" from a string.
+     * This is used for both basePath and resource path sanitization. When the special chars are present in those
+     * paths, user can escape them in order to get through the compilation phase. Then listener sanitize and register
+     * paths in both basePath map and resource syntax tree using the unescaped values as during the dispatching,
+     * the path matches with encoded raw path.
      *
      * @param segment path segment
      * @return encoded value
      */
-    public static String unescapeAndEncodeValue(String segment) {
+    public static String unescapeValue(String segment) {
+        if (segment.length() > 1 && segment.startsWith("'")) {
+            segment = segment.substring(1);
+        }
         if (!segment.contains("\\")) {
             return segment;
         }
-        return encodeString(segment.replace("\\", ""));
+        return segment.replace("\\", "");
+    }
+
+    public static String unescapeAndEncodeValue(String value) {
+        return encodeString(unescapeValue(value));
+    }
+
+    public static String unescapeAndEncodePath(String path) {
+        return URIUtil.encodePathSegment(unescapeValue(path));
     }
 
     public static String encodeString(String value) {
@@ -2002,6 +2016,11 @@ public class HttpUtil {
                    Objects.nonNull(bodyField);
         }
         return false;
+    }
+
+    public static boolean hasEventStreamContentType(HttpCarbonMessage message) {
+        String contentType = HttpUtil.getContentTypeFromTransportMessage(message);
+        return contentType != null && contentType.startsWith(MimeConstants.TEXT_EVENT_STREAM);
     }
 
     private HttpUtil() {

@@ -16,38 +16,11 @@
  */
 
 plugins {
-    id "com.github.spotbugs" version "5.0.14"
-    id "com.github.johnrengelman.shadow" version "8.1.1"
-    id "de.undercouch.download" version "5.4.0"
-    id "net.researchgate.release" version "2.8.0"
+    id "com.github.spotbugs" version "${githubSpotbugsVersion}"
+    id "com.github.johnrengelman.shadow" version "${githubJohnrengelmanShadowVersion}"
+    id "de.undercouch.download" version "${underCouchDownloadVersion}"
+    id "net.researchgate.release" version "${researchgateReleaseVersion}"
 }
-
-ext.ballerinaLangVersion = project.ballerinaLangVersion
-ext.stdlibMimeVersion = project.stdlibMimeVersion
-ext.stdlibIoVersion = project.stdlibIoVersion
-ext.stdlibConstraintVersion = project.stdlibConstraintVersion
-ext.stdlibLogVersion = project.stdlibLogVersion
-ext.stdlibAuthVersion = project.stdlibAuthVersion
-ext.stdlibJwtVersion = project.stdlibJwtVersion
-ext.stdlibOAuth2Version = project.stdlibOAuth2Version
-ext.stdlibCacheVersion = project.stdlibCacheVersion
-ext.stdlibTimeVersion = project.stdlibTimeVersion
-ext.stdlibUrlVersion = project.stdlibUrlVersion
-ext.stdlibCryptoVersion = project.stdlibCryptoVersion
-ext.stdlibFileVersion = project.stdlibFileVersion
-ext.stdlibOsVersion = project.stdlibOsVersion
-ext.stdlibTaskVersion = project.stdlibTaskVersion
-
-ext.slf4jVersion = project.slf4jVersion
-ext.ballerinaTomlParserVersion = project.ballerinaTomlParserVersion
-ext.puppycrawlCheckstyleVersion = project.puppycrawlCheckstyleVersion
-ext.commonsLang3Version = project.commonsLang3Version
-ext.nettyVersion = project.nettyVersion
-ext.nettyTcnativeVersion = project.nettyTcnativeVersion
-ext.wso2CommonsPoolVersion = project.wso2CommonsPoolVersion
-ext.bouncycastleVersion = project.bouncycastleVersion
-ext.mimepullVersion = project.mimepullVersion
-ext.testngVersion = project.testngVersion
 
 allprojects {
     group = project.group
@@ -108,9 +81,11 @@ subprojects {
         ballerinaStdLibs "io.ballerina.stdlib:cache-ballerina:${stdlibCacheVersion}"
         ballerinaStdLibs "io.ballerina.stdlib:time-ballerina:${stdlibTimeVersion}"
         ballerinaStdLibs "io.ballerina.stdlib:url-ballerina:${stdlibUrlVersion}"
+        ballerinaStdLibs "io.ballerina.stdlib:uuid-ballerina:${stdlibUuidVersion}"
         ballerinaStdLibs "io.ballerina.stdlib:crypto-ballerina:${stdlibCryptoVersion}"
         ballerinaStdLibs "io.ballerina.stdlib:file-ballerina:${stdlibFileVersion}"
         ballerinaStdLibs "io.ballerina.stdlib:observe-ballerina:${observeVersion}"
+        ballerinaStdLibs "io.ballerina.lib:data.jsondata-ballerina:${stdlibDataJsonDataVersion}"
         ballerinaStdLibs "io.ballerina:observe-ballerina:${observeInternalVersion}"
 
         // Transitive dependencies

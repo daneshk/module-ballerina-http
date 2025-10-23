@@ -78,6 +78,7 @@ public class HttpClientChannelInitializer extends ChannelInitializer<SocketChann
 
     private TargetHandler targetHandler;
     private boolean httpTraceLogEnabled;
+    private boolean httpAccessLogEnabled;
     private KeepAliveConfig keepAliveConfig;
     private ProxyServerConfiguration proxyServerConfiguration;
     private Http2ConnectionManager http2ConnectionManager;
@@ -90,7 +91,6 @@ public class HttpClientChannelInitializer extends ChannelInitializer<SocketChann
     private HttpRoute httpRoute;
     private SenderConfiguration senderConfiguration;
     private ConnectionAvailabilityFuture connectionAvailabilityFuture;
-    private SSLHandlerFactory sslHandlerFactory;
     private final InboundMsgSizeValidationConfig responseSizeValidationConfig;
     private static final Logger LOG = LoggerFactory.getLogger(HttpClientChannelInitializer.class);
 
@@ -98,6 +98,7 @@ public class HttpClientChannelInitializer extends ChannelInitializer<SocketChann
                                         ConnectionManager connectionManager,
                                         ConnectionAvailabilityFuture connectionAvailabilityFuture) {
         this.httpTraceLogEnabled = senderConfiguration.isHttpTraceLogEnabled();
+        this.httpAccessLogEnabled = senderConfiguration.isHttpAccessLogEnabled();
         this.keepAliveConfig = senderConfiguration.getKeepAliveConfig();
         this.proxyServerConfiguration = senderConfiguration.getProxyServerConfiguration();
         this.http2ConnectionManager = connectionManager.getHttp2ConnectionManager();
@@ -122,9 +123,6 @@ public class HttpClientChannelInitializer extends ChannelInitializer<SocketChann
         connectionHandlerBuilder.initialSettings().initialWindowSize(senderConfiguration.getHttp2InitialWindowSize());
         http2ConnectionHandler = connectionHandlerBuilder.connection(connection).frameListener(frameListener).build();
         http2TargetHandler = new Http2TargetHandler(connection, http2ConnectionHandler.encoder());
-        if (sslConfig != null) {
-            sslHandlerFactory = new SSLHandlerFactory(sslConfig);
-        }
     }
 
     @Override
@@ -136,8 +134,13 @@ public class HttpClientChannelInitializer extends ChannelInitializer<SocketChann
         targetHandler = new TargetHandler();
         targetHandler.setHttp2TargetHandler(http2TargetHandler);
         targetHandler.setKeepAliveConfig(getKeepAliveConfig());
+        targetHandler.setHttpClientChannelInitializer(this);
+        http2TargetHandler.setHttpClientChannelInitializer(this);
         if (http2) {
             if (sslConfig != null) {
+                if (!sslConfig.hasSslCtxInitialized()) {
+                    sslConfig.initializeSSLContext(http2);
+                }
                 configureSslForHttp2(socketChannel, clientPipeline, sslConfig);
             } else if (senderConfiguration.isForceHttp2()) {
                 configureHttp2Pipeline(clientPipeline);
@@ -146,6 +149,9 @@ public class HttpClientChannelInitializer extends ChannelInitializer<SocketChann
             }
         } else {
             if (sslConfig != null) {
+                if (!sslConfig.hasSslCtxInitialized()) {
+                    sslConfig.initializeSSLContext(http2);
+                }
                 connectionAvailabilityFuture.setSSLEnabled(true);
                 SSLEngine sslEngine = Util
                         .configureHttpPipelineForSSL(socketChannel, httpRoute.getHost(), httpRoute.getPort(),
@@ -186,13 +192,11 @@ public class HttpClientChannelInitializer extends ChannelInitializer<SocketChann
         }
     }
 
-    private void configureSslForHttp2(SocketChannel ch, ChannelPipeline clientPipeline, SSLConfig sslConfig)
-            throws Exception {
+    private void configureSslForHttp2(SocketChannel ch, ChannelPipeline clientPipeline, SSLConfig sslConfig) {
         connectionAvailabilityFuture.setSSLEnabled(true);
         if (sslConfig.isOcspStaplingEnabled()) {
             ReferenceCountedOpenSslContext referenceCountedOpenSslContext =
-                    (ReferenceCountedOpenSslContext) sslHandlerFactory.
-                            createHttp2TLSContextForClient(sslConfig.isOcspStaplingEnabled());
+                    sslConfig.getReferenceCountedOpenSslContext();
             if (referenceCountedOpenSslContext != null) {
                 SslHandler sslHandler = referenceCountedOpenSslContext.newHandler(ch.alloc());
                 ReferenceCountedOpenSslEngine engine = (ReferenceCountedOpenSslEngine) sslHandler.engine();
@@ -201,15 +205,16 @@ public class HttpClientChannelInitializer extends ChannelInitializer<SocketChann
                 ch.pipeline().addLast(new OCSPStaplingHandler(engine));
             }
         } else if (sslConfig.isDisableSsl()) {
-            SslContext sslCtx = Util.createInsecureSslEngineForHttp2(sslConfig);
+            SslContext sslCtx = sslConfig.getSslContext();
             SslHandler sslHandler = sslCtx.newHandler(ch.alloc(), httpRoute.getHost(), httpRoute.getPort());
             clientPipeline.addLast(sslHandler);
         } else {
-            sslHandlerFactory.createSSLContextFromKeystores(false);
-            SslContext sslCtx = sslHandlerFactory.createHttp2TLSContextForClient(false);
+            SslContext sslCtx = sslConfig.getSslContext();
             SslHandler sslHandler = sslCtx.newHandler(ch.alloc(), httpRoute.getHost(), httpRoute.getPort());
             SSLEngine sslEngine = sslHandler.engine();
-            sslHandlerFactory.setSNIServerNames(sslEngine, httpRoute.getHost());
+            SSLHandlerFactory sslHandlerFactory = new SSLHandlerFactory(sslConfig);
+            sslHandlerFactory.setSNIServerNames(sslEngine,
+                    sslConfig.getSniHostName() != null ? sslConfig.getSniHostName() : httpRoute.getHost());
             if (sslConfig.isHostNameVerificationEnabled()) {
                 setHostNameVerfication(sslEngine);
             }
@@ -225,6 +230,10 @@ public class HttpClientChannelInitializer extends ChannelInitializer<SocketChann
                 new ALPNClientHandler(targetHandler, connectionAvailabilityFuture));
         clientPipeline
                 .addLast(Constants.HTTP2_EXCEPTION_HANDLER, new Http2ExceptionHandler(http2ConnectionHandler));
+    }
+
+    public boolean isHttpAccessLogEnabled() {
+        return httpAccessLogEnabled;
     }
 
     public TargetHandler getTargetHandler() {

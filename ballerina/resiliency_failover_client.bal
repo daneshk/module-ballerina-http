@@ -33,6 +33,7 @@ type FailoverInferredConfig record {|
 # + failoverInferredConfig - Configurations derived from `FailoverConfig`
 # + failoverClientsArray - Array of `Client` for target endpoints
 # + requireValidation - Enables the inbound payload validation functionalty which provided by the constraint package
+# + requireLaxDataBinding - Enables or disalbles relaxed data binding.
 public client isolated class FailoverClient {
     *ClientObject;
 
@@ -40,6 +41,7 @@ public client isolated class FailoverClient {
     private final FailoverInferredConfig & readonly failoverInferredConfig;
     private final Client?[] failoverClientsArray;
     private final boolean requireValidation;
+    private final boolean requireLaxDataBinding;
 
     # Failover caller actions which provides failover capabilities to an HTTP client endpoint.
     #
@@ -64,6 +66,7 @@ public client isolated class FailoverClient {
         };
         self.failoverInferredConfig = failoverInferredConfig.cloneReadOnly();
         self.requireValidation = failoverClientConfig.validation;
+        self.requireLaxDataBinding = failoverClientConfig.laxDataBinding;
         return;
     }
 
@@ -73,7 +76,7 @@ public client isolated class FailoverClient {
     # + message - An HTTP outbound request or any allowed payload
     # + headers - The entity headers
     # + mediaType - The MIME type header of the request entity
-    # + targetType - HTTP response or `anydata`, which is expected to be returned after data binding
+    # + targetType - HTTP response, `anydata` or stream of HTTP SSE, which is expected to be returned after data binding
     # + params - The query parameters
     # + return - The response or the payload (if the `targetType` is configured) or an `http:ClientError` if failed to
     #            establish the communication with the upstream server or a data binding failure
@@ -89,7 +92,7 @@ public client isolated class FailoverClient {
     # + message - An HTTP outbound request or any allowed payload
     # + headers - The entity headers
     # + mediaType - The MIME type header of the request entity
-    # + targetType - HTTP response or `anydata`, which is expected to be returned after data binding
+    # + targetType - HTTP response, `anydata` or stream of HTTP SSE, which is expected to be returned after data binding
     # + return - The response or the payload (if the `targetType` is configured) or an `http:ClientError` if failed to
     #            establish the communication with the upstream server or a data binding failure
     remote isolated function post(string path, RequestMessage message, map<string|string[]>? headers = (),
@@ -99,14 +102,14 @@ public client isolated class FailoverClient {
     } external;
 
     private isolated function processPost(string path, RequestMessage message, TargetType targetType, 
-            string? mediaType, map<string|string[]>? headers) returns Response|anydata|ClientError {
+            string? mediaType, map<string|string[]>? headers) returns Response|stream<SseEvent, error?>|anydata|ClientError {
         Request req = check buildRequest(message, mediaType);
         populateOptions(req, mediaType, headers);
         var result = self.performFailoverAction(path, req, HTTP_POST);
         if result is HttpFuture {
             return getInvalidTypeError();
         } else if result is ClientError|Response {
-            return processResponse(result, targetType, self.requireValidation);
+            return processResponse(result, targetType, self.requireValidation, self.requireLaxDataBinding);
         } else {
             panic error ClientError("invalid response type received");
         }
@@ -118,7 +121,7 @@ public client isolated class FailoverClient {
     # + message - An HTTP outbound request or any allowed payload
     # + headers - The entity headers
     # + mediaType - The MIME type header of the request entity
-    # + targetType - HTTP response or `anydata`, which is expected to be returned after data binding
+    # + targetType - HTTP response, `anydata` or stream of HTTP SSE, which is expected to be returned after data binding
     # + params - The query parameters
     # + return - The response or the payload (if the `targetType` is configured) or an `http:ClientError` if failed to
     #            establish the communication with the upstream server or a data binding failure
@@ -134,7 +137,7 @@ public client isolated class FailoverClient {
     # + message - An HTTP outbound request or any allowed payload
     # + headers - The entity headers
     # + mediaType - The MIME type header of the request entity
-    # + targetType - HTTP response or `anydata`, which is expected to be returned after data binding
+    # + targetType - HTTP response, `anydata` or stream of HTTP SSE, which is expected to be returned after data binding
     # + return - The response or the payload (if the `targetType` is configured) or an `http:ClientError` if failed to
     #            establish the communication with the upstream server or a data binding failure
     remote isolated function put(string path, RequestMessage message, map<string|string[]>? headers = (),
@@ -144,14 +147,14 @@ public client isolated class FailoverClient {
     } external;
     
     private isolated function processPut(string path, RequestMessage message, TargetType targetType, 
-            string? mediaType, map<string|string[]>? headers) returns Response|anydata|ClientError {
+            string? mediaType, map<string|string[]>? headers) returns Response|stream<SseEvent, error?>|anydata|ClientError {
         Request req = check buildRequest(message, mediaType);
         populateOptions(req, mediaType, headers);
         var result = self.performFailoverAction(path, req, HTTP_PUT);
         if result is HttpFuture {
             return getInvalidTypeError();
         } else if result is ClientError|Response {
-            return processResponse(result, targetType, self.requireValidation);
+            return processResponse(result, targetType, self.requireValidation, self.requireLaxDataBinding);
         } else {
             panic error ClientError("invalid response type received");
         }
@@ -163,7 +166,7 @@ public client isolated class FailoverClient {
     # + message - An HTTP outbound request or any allowed payload
     # + headers - The entity headers
     # + mediaType - The MIME type header of the request entity
-    # + targetType - HTTP response or `anydata`, which is expected to be returned after data binding
+    # + targetType - HTTP response, `anydata` or stream of HTTP SSE, which is expected to be returned after data binding
     # + params - The query parameters
     # + return - The response or the payload (if the `targetType` is configured) or an `http:ClientError` if failed to
     #            establish the communication with the upstream server or a data binding failure
@@ -179,7 +182,7 @@ public client isolated class FailoverClient {
     # + message - An HTTP outbound request or any allowed payload
     # + headers - The entity headers
     # + mediaType - The MIME type header of the request entity
-    # + targetType - HTTP response or `anydata`, which is expected to be returned after data binding
+    # + targetType - HTTP response, `anydata` or stream of HTTP SSE, which is expected to be returned after data binding
     # + return - The response or the payload (if the `targetType` is configured) or an `http:ClientError` if failed to
     #            establish the communication with the upstream server or a data binding failure
     remote isolated function patch(string path, RequestMessage message, map<string|string[]>? headers = (),
@@ -189,14 +192,14 @@ public client isolated class FailoverClient {
     } external;
     
     private isolated function processPatch(string path, RequestMessage message, TargetType targetType, 
-            string? mediaType, map<string|string[]>? headers) returns Response|anydata|ClientError {
+            string? mediaType, map<string|string[]>? headers) returns Response|stream<SseEvent, error?>|anydata|ClientError {
         Request req = check buildRequest(message, mediaType);
         populateOptions(req, mediaType, headers);
         var result = self.performFailoverAction(path, req, HTTP_PATCH);
         if result is HttpFuture {
             return getInvalidTypeError();
         } else if result is ClientError|Response {
-            return processResponse(result, targetType, self.requireValidation);
+            return processResponse(result, targetType, self.requireValidation, self.requireLaxDataBinding);
         } else {
             panic error ClientError("invalid response type received");
         }
@@ -208,7 +211,7 @@ public client isolated class FailoverClient {
     # + message - An optional HTTP outbound request or any allowed payload
     # + headers - The entity headers
     # + mediaType - The MIME type header of the request entity
-    # + targetType - HTTP response or `anydata`, which is expected to be returned after data binding
+    # + targetType - HTTP response, `anydata` or stream of HTTP SSE, which is expected to be returned after data binding
     # + params - The query parameters
     # + return - The response or the payload (if the `targetType` is configured) or an `http:ClientError` if failed to
     #            establish the communication with the upstream server or a data binding failure
@@ -224,7 +227,7 @@ public client isolated class FailoverClient {
     # + message - An optional HTTP outbound request message or any allowed payload
     # + headers - The entity headers
     # + mediaType - The MIME type header of the request entity
-    # + targetType - HTTP response or `anydata`, which is expected to be returned after data binding
+    # + targetType - HTTP response, `anydata` or stream of HTTP SSE, which is expected to be returned after data binding
     # + return - The response or the payload (if the `targetType` is configured) or an `http:ClientError` if failed to
     #            establish the communication with the upstream server or a data binding failure
     remote isolated function delete(string path, RequestMessage message = (), map<string|string[]>? headers = (),
@@ -234,14 +237,14 @@ public client isolated class FailoverClient {
     } external;
     
     private isolated function processDelete(string path, RequestMessage message, TargetType targetType, 
-            string? mediaType, map<string|string[]>? headers) returns Response|anydata|ClientError {
+            string? mediaType, map<string|string[]>? headers) returns Response|stream<SseEvent, error?>|anydata|ClientError {
         Request req = check buildRequest(message, mediaType);
         populateOptions(req, mediaType, headers);
         var result = self.performFailoverAction(path, req, HTTP_DELETE);
         if result is HttpFuture {
             return getInvalidTypeError();
         } else if result is ClientError|Response {
-            return processResponse(result, targetType, self.requireValidation);
+            return processResponse(result, targetType, self.requireValidation, self.requireLaxDataBinding);
         } else {
             panic error ClientError("invalid response type received");
         }
@@ -280,7 +283,7 @@ public client isolated class FailoverClient {
     #
     # + path - Request path
     # + headers - The entity headers
-    # + targetType - HTTP response or `anydata`, which is expected to be returned after data binding
+    # + targetType - HTTP response, `anydata` or stream of HTTP SSE, which is expected to be returned after data binding
     # + params - The query parameters
     # + return - The response or the payload (if the `targetType` is configured) or an `http:ClientError` if failed to
     #            establish the communication with the upstream server or a data binding failure
@@ -294,7 +297,7 @@ public client isolated class FailoverClient {
     #
     # + path - Resource path
     # + headers - The entity headers
-    # + targetType - HTTP response or `anydata`, which is expected to be returned after data binding
+    # + targetType - HTTP response, `anydata` or stream of HTTP SSE, which is expected to be returned after data binding
     # + return - The response or the payload (if the `targetType` is configured) or an `http:ClientError` if failed to
     #            establish the communication with the upstream server or a data binding failure
     remote isolated function get(string path, map<string|string[]>? headers = (), TargetType targetType = <>)
@@ -303,13 +306,13 @@ public client isolated class FailoverClient {
     } external;
         
     private isolated function processGet(string path, map<string|string[]>? headers, TargetType targetType)
-            returns Response|anydata|ClientError {
+            returns Response|stream<SseEvent, error?>|anydata|ClientError {
         Request req = buildRequestWithHeaders(headers);
         var result = self.performFailoverAction(path, req, HTTP_GET);
         if result is HttpFuture {
             return getInvalidTypeError();
         } else if result is ClientError|Response {
-            return processResponse(result, targetType, self.requireValidation);
+            return processResponse(result, targetType, self.requireValidation, self.requireLaxDataBinding);
         } else {
             panic error ClientError("invalid response type received");
         }
@@ -319,7 +322,7 @@ public client isolated class FailoverClient {
     #
     # + path - Request path
     # + headers - The entity headers
-    # + targetType - HTTP response or `anydata`, which is expected to be returned after data binding
+    # + targetType - HTTP response, `anydata` or stream of HTTP SSE, which is expected to be returned after data binding
     # + params - The query parameters
     # + return - The response or the payload (if the `targetType` is configured) or an `http:ClientError` if failed to
     #            establish the communication with the upstream server or a data binding failure
@@ -333,7 +336,7 @@ public client isolated class FailoverClient {
     #
     # + path - Resource path
     # + headers - The entity headers
-    # + targetType - HTTP response or `anydata`, which is expected to be returned after data binding
+    # + targetType - HTTP response, `anydata` or stream of HTTP SSE, which is expected to be returned after data binding
     # + return - The response or the payload (if the `targetType` is configured) or an `http:ClientError` if failed to
     #            establish the communication with the upstream server or a data binding failure
     remote isolated function options(string path, map<string|string[]>? headers = (), TargetType targetType = <>)
@@ -342,13 +345,13 @@ public client isolated class FailoverClient {
     } external;
     
     private isolated function processOptions(string path, map<string|string[]>? headers, TargetType targetType)
-            returns Response|anydata|ClientError {
+            returns Response|stream<SseEvent, error?>|anydata|ClientError {
         Request req = buildRequestWithHeaders(headers);
         var result = self.performFailoverAction(path, req, HTTP_OPTIONS);
         if result is HttpFuture {
             return getInvalidTypeError();
         } else if result is ClientError|Response {
-            return processResponse(result, targetType, self.requireValidation);
+            return processResponse(result, targetType, self.requireValidation, self.requireLaxDataBinding);
         } else {
             panic error ClientError("invalid response type received");
         }
@@ -361,7 +364,7 @@ public client isolated class FailoverClient {
     # + message - An HTTP outbound request or any allowed payload
     # + headers - The entity headers
     # + mediaType - The MIME type header of the request entity
-    # + targetType - HTTP response or `anydata`, which is expected to be returned after data binding
+    # + targetType - HTTP response, `anydata` or stream of HTTP SSE, which is expected to be returned after data binding
     # + return - The response or the payload (if the `targetType` is configured) or an `http:ClientError` if failed to
     #            establish the communication with the upstream server or a data binding failure
     remote isolated function execute(string httpVerb, string path, RequestMessage message,
@@ -372,14 +375,14 @@ public client isolated class FailoverClient {
     
     private isolated function processExecute(string httpVerb, string path, RequestMessage message,
             TargetType targetType, string? mediaType, map<string|string[]>? headers) 
-            returns Response|anydata|ClientError {
+            returns Response|stream<SseEvent, error?>|anydata|ClientError {
         Request req = check buildRequest(message, mediaType);
         populateOptions(req, mediaType, headers);
         var result = self.performExecuteAction(path, req, httpVerb);
         if result is HttpFuture {
             return getInvalidTypeError();
         } else if result is ClientError|Response {
-            return processResponse(result, targetType, self.requireValidation);
+            return processResponse(result, targetType, self.requireValidation, self.requireLaxDataBinding);
         } else {
             panic error ClientError("invalid response type received");
         }
@@ -389,7 +392,7 @@ public client isolated class FailoverClient {
     #
     # + path - Resource path
     # + request - An HTTP request
-    # + targetType - HTTP response or `anydata`, which is expected to be returned after data binding
+    # + targetType - HTTP response, `anydata` or stream of HTTP SSE, which is expected to be returned after data binding
     # + return - The response or the payload (if the `targetType` is configured) or an `http:ClientError` if failed to
     #            establish the communication with the upstream server or a data binding failure
     remote isolated function forward(string path, Request request, TargetType targetType = <>)
@@ -398,12 +401,12 @@ public client isolated class FailoverClient {
     } external;
     
     private isolated function processForward(string path, Request request, TargetType targetType)
-            returns Response|anydata|ClientError {
+            returns Response|stream<SseEvent, error?>|anydata|ClientError {
         var result = self.performFailoverAction(path, request, HTTP_FORWARD);
         if result is HttpFuture {
             return getInvalidTypeError();
         } else if result is ClientError|Response {
-            return processResponse(result, targetType, self.requireValidation);
+            return processResponse(result, targetType, self.requireValidation, self.requireLaxDataBinding);
         } else {
             panic error ClientError("invalid response type received");
         }
@@ -413,7 +416,8 @@ public client isolated class FailoverClient {
     # return an `http:Response` as the result. Rather it returns an `http:HttpFuture` which can be used for subsequent interactions
     # with the HTTP endpoint.
     #
-    # + httpVerb - The HTTP verb value
+    # + httpVerb - The HTTP verb value. The HTTP verb is case-sensitive. Use the `http:Method` type to specify the
+    #              the standard HTTP methods.
     # + path - The resource path
     # + message - An HTTP outbound request or any allowed payload
     # + return - An `http:HttpFuture` that represents an asynchronous service invocation or else an `http:ClientError` if the submission

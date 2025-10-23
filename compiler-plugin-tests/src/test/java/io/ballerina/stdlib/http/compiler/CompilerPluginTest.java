@@ -60,6 +60,14 @@ import static io.ballerina.stdlib.http.compiler.CompilerPluginTestConstants.HTTP
 import static io.ballerina.stdlib.http.compiler.CompilerPluginTestConstants.HTTP_150;
 import static io.ballerina.stdlib.http.compiler.CompilerPluginTestConstants.HTTP_151;
 import static io.ballerina.stdlib.http.compiler.CompilerPluginTestConstants.HTTP_152;
+import static io.ballerina.stdlib.http.compiler.CompilerPluginTestConstants.HTTP_153;
+import static io.ballerina.stdlib.http.compiler.CompilerPluginTestConstants.HTTP_154;
+import static io.ballerina.stdlib.http.compiler.CompilerPluginTestConstants.HTTP_155;
+import static io.ballerina.stdlib.http.compiler.CompilerPluginTestConstants.HTTP_156;
+import static io.ballerina.stdlib.http.compiler.CompilerPluginTestConstants.HTTP_157;
+import static io.ballerina.stdlib.http.compiler.CompilerPluginTestConstants.HTTP_158;
+import static io.ballerina.stdlib.http.compiler.CompilerPluginTestConstants.HTTP_159;
+import static io.ballerina.stdlib.http.compiler.CompilerPluginTestConstants.HTTP_160;
 
 /**
  * This class includes tests for Ballerina Http compiler plugin.
@@ -126,11 +134,14 @@ public class CompilerPluginTest {
         DiagnosticResult diagnosticResult = compilation.diagnosticResult();
         Assert.assertEquals(diagnosticResult.errorCount(), 3);
         assertError(diagnosticResult, 0, "invalid resource method return type: expected " +
-                "'anydata|http:Response|http:StatusCodeResponse|error', but found 'error[]'", HTTP_102);
+                "'anydata|http:Response|http:StatusCodeResponse|stream<http:SseEvent, error?>|" +
+                "stream<http:SseEvent, error>|error', but found 'error[]'", HTTP_102);
         assertError(diagnosticResult, 1, "invalid resource method return type: expected 'anydata|http:Response" +
-                "|http:StatusCodeResponse|error', but found 'map<http:Client>'", HTTP_102);
+                "|http:StatusCodeResponse|stream<http:SseEvent, error?>|stream<http:SseEvent, error>|" +
+                "error', but found 'map<http:Client>'", HTTP_102);
         assertError(diagnosticResult, 2, "invalid resource method return type: expected " +
-                "'anydata|http:Response|http:StatusCodeResponse|error', but found 'readonly & error[]'", HTTP_102);
+                "'anydata|http:Response|http:StatusCodeResponse|stream<http:SseEvent, error?>|" +
+                "stream<http:SseEvent, error>|error', but found 'readonly & error[]'", HTTP_102);
     }
 
     @Test
@@ -138,7 +149,7 @@ public class CompilerPluginTest {
         Package currentPackage = loadPackage("sample_package_4");
         PackageCompilation compilation = currentPackage.getCompilation();
         DiagnosticResult diagnosticResult = compilation.diagnosticResult();
-        Assert.assertEquals(diagnosticResult.errorCount(), 8);
+        Assert.assertEquals(diagnosticResult.errorCount(), 7);
         assertError(diagnosticResult, 0, "invalid multiple resource parameter annotations for 'abc': expected one of " +
                 "the following types: 'http:Payload', 'http:CallerInfo', 'http:Header', 'http:Query'", HTTP_108);
         assertError(diagnosticResult, 1, "invalid usage of payload annotation for a non entity body " +
@@ -147,13 +158,11 @@ public class CompilerPluginTest {
                 "resource : 'head'. Use an accessor that supports entity body", HTTP_129);
         assertError(diagnosticResult, 3, "invalid usage of payload annotation for a non entity body resource" +
                 " : 'options'. Use an accessor that supports entity body", HTTP_129);
-        assertError(diagnosticResult, 4, "invalid annotation type on param 'a': expected one of the following types: " +
-            "'http:Payload', 'http:CallerInfo', 'http:Header', 'http:Query'", CompilerPluginTestConstants.HTTP_104);
-        assertTrue(diagnosticResult, 5, "invalid payload parameter type: 'string|ballerina/http:",
+        assertTrue(diagnosticResult, 4, "invalid payload parameter type: 'string|ballerina/http:",
+                CompilerPluginTestConstants.HTTP_107);
+        assertTrue(diagnosticResult, 5, "invalid payload parameter type:",
                 CompilerPluginTestConstants.HTTP_107);
         assertTrue(diagnosticResult, 6, "invalid payload parameter type:",
-                CompilerPluginTestConstants.HTTP_107);
-        assertTrue(diagnosticResult, 7, "invalid payload parameter type:",
                 CompilerPluginTestConstants.HTTP_107);
     }
 
@@ -400,21 +409,20 @@ public class CompilerPluginTest {
         Package currentPackage = loadPackage("sample_package_15");
         PackageCompilation compilation = currentPackage.getCompilation();
         DiagnosticResult diagnosticResult = compilation.diagnosticResult();
-        Assert.assertEquals(diagnosticResult.errorCount(), 13);
+        Assert.assertEquals(diagnosticResult.errorCount(), 12);
         // only testing the error locations
         assertErrorPosition(diagnosticResult, 0, "(29:44,29:60)");
-        assertErrorPosition(diagnosticResult, 1, "(42:86,42:87)");
-        assertErrorPosition(diagnosticResult, 2, "(46:57,46:60)");
-        assertErrorPosition(diagnosticResult, 3, "(50:63,50:66)");
-        assertErrorPosition(diagnosticResult, 4, "(54:66,54:69)");
-        assertErrorPosition(diagnosticResult, 5, "(58:77,58:80)");
-        assertErrorPosition(diagnosticResult, 6, "(62:76,62:79)");
-        assertErrorPosition(diagnosticResult, 7, "(66:76,66:82)");
-        assertErrorPosition(diagnosticResult, 8, "(73:45,73:46)");
-        assertErrorPosition(diagnosticResult, 9, "(81:43,81:46)");
-        assertErrorPosition(diagnosticResult, 10, "(81:61,81:64)");
-        assertErrorPosition(diagnosticResult, 11, "(81:79,81:82)");
-        assertErrorPosition(diagnosticResult, 12, "(85:77,85:93)");
+        assertErrorPosition(diagnosticResult, 1, "(46:57,46:60)");
+        assertErrorPosition(diagnosticResult, 2, "(50:63,50:66)");
+        assertErrorPosition(diagnosticResult, 3, "(54:66,54:69)");
+        assertErrorPosition(diagnosticResult, 4, "(58:77,58:80)");
+        assertErrorPosition(diagnosticResult, 5, "(62:76,62:79)");
+        assertErrorPosition(diagnosticResult, 6, "(66:76,66:82)");
+        assertErrorPosition(diagnosticResult, 7, "(73:45,73:46)");
+        assertErrorPosition(diagnosticResult, 8, "(81:43,81:46)");
+        assertErrorPosition(diagnosticResult, 9, "(81:61,81:64)");
+        assertErrorPosition(diagnosticResult, 10, "(81:79,81:82)");
+        assertErrorPosition(diagnosticResult, 11, "(85:77,85:93)");
     }
 
     @Test
@@ -632,23 +640,32 @@ public class CompilerPluginTest {
         DiagnosticResult diagnosticResult = compilation.diagnosticResult();
         Assert.assertEquals(diagnosticResult.errorCount(), 9);
         assertTrue(diagnosticResult, 0, "invalid resource method return type: expected " +
-                "'anydata|http:Response|http:StatusCodeResponse|error', but found 'TestRecord1[]'", HTTP_102);
+                "'anydata|http:Response|http:StatusCodeResponse|stream<http:SseEvent, error?>|" +
+                "stream<http:SseEvent, error>|error', but found 'TestRecord1[]'", HTTP_102);
         assertTrue(diagnosticResult, 1, "invalid resource method return type: expected " +
-                "'anydata|http:Response|http:StatusCodeResponse|error', but found 'TestRecord2[]'", HTTP_102);
+                "'anydata|http:Response|http:StatusCodeResponse|stream<http:SseEvent, error?>|" +
+                "stream<http:SseEvent, error>|error', but found 'TestRecord2[]'", HTTP_102);
         assertTrue(diagnosticResult, 2, "invalid resource method return type: expected " +
-                "'anydata|http:Response|http:StatusCodeResponse|error', but found 'TestRecord3[]'", HTTP_102);
+                "'anydata|http:Response|http:StatusCodeResponse|stream<http:SseEvent, error?>|" +
+                "stream<http:SseEvent, error>|error', but found 'TestRecord3[]'", HTTP_102);
         assertTrue(diagnosticResult, 3, "invalid resource method return type: expected " +
-                "'anydata|http:Response|http:StatusCodeResponse|error', but found 'TestRecord4[]'", HTTP_102);
+                "'anydata|http:Response|http:StatusCodeResponse|stream<http:SseEvent, error?>|" +
+                "stream<http:SseEvent, error>|error', but found 'TestRecord4[]'", HTTP_102);
         assertTrue(diagnosticResult, 4, "invalid resource method return type: expected " +
-                "'anydata|http:Response|http:StatusCodeResponse|error', but found 'TestRecord5[]'", HTTP_102);
+                "'anydata|http:Response|http:StatusCodeResponse|stream<http:SseEvent, error?>" +
+                "|stream<http:SseEvent, error>|error', but found 'TestRecord5[]'", HTTP_102);
         assertTrue(diagnosticResult, 5, "invalid resource method return type: expected " +
-                "'anydata|http:Response|http:StatusCodeResponse|error', but found 'TestRecord6[]'", HTTP_102);
+                "'anydata|http:Response|http:StatusCodeResponse|stream<http:SseEvent, error?>|" +
+                "stream<http:SseEvent, error>|error', but found 'TestRecord6[]'", HTTP_102);
         assertTrue(diagnosticResult, 6, "invalid resource method return type: expected " +
-                "'anydata|http:Response|http:StatusCodeResponse|error', but found 'TestRecord7[]'", HTTP_102);
+                "'anydata|http:Response|http:StatusCodeResponse|stream<http:SseEvent, error?>|" +
+                "stream<http:SseEvent, error>|error', but found 'TestRecord7[]'", HTTP_102);
         assertTrue(diagnosticResult, 7, "invalid resource method return type: expected 'anydata|" +
-                "http:Response|http:StatusCodeResponse|error', but found 'http:StatusCodeResponse[]'", HTTP_102);
+                "http:Response|http:StatusCodeResponse|stream<http:SseEvent, error?>|" +
+                "stream<http:SseEvent, error>|error', but found 'http:StatusCodeResponse[]'", HTTP_102);
         assertTrue(diagnosticResult, 8, "invalid resource method return type: expected " +
-                "'anydata|http:Response|http:StatusCodeResponse|error', but found 'error[]'", HTTP_102);
+                "'anydata|http:Response|http:StatusCodeResponse|stream<http:SseEvent, error?>|" +
+                "stream<http:SseEvent, error>|error', but found 'error[]'", HTTP_102);
     }
 
     @Test
@@ -874,5 +891,42 @@ public class CompilerPluginTest {
         DiagnosticResult diagnosticResult = packageCompilation.diagnosticResult();
         Assert.assertFalse(diagnosticResult.hasWarnings());
         Assert.assertFalse(diagnosticResult.hasErrors());
+    }
+
+    @Test
+    public void testServiceContractValidations() {
+        Package currentPackage = loadPackage("sample_package_40");
+        PackageCompilation compilation = currentPackage.getCompilation();
+        DiagnosticResult diagnosticResult = compilation.diagnosticResult();
+        Assert.assertEquals(diagnosticResult.errorCount(), 8);
+        assertError(diagnosticResult, 0, "base path not allowed in the service declaration which is" +
+                " implemented via the 'http:ServiceContract' type. The base path is inferred from the service " +
+                "contract type", HTTP_154);
+        assertError(diagnosticResult, 1, "'http:ServiceConfig' annotation is not allowed for service " +
+                "declaration implemented via the 'http:ServiceContract' type. The HTTP annotations are inferred" +
+                " from the service contract type", HTTP_153);
+        assertError(diagnosticResult, 2, "configuring base path in the 'http:ServiceConfig' annotation" +
+                " is not allowed for non service contract types", HTTP_155);
+        assertError(diagnosticResult, 3, "invalid service type descriptor found in 'http:ServiceConfig' " +
+                "annotation. Expected service type: 'ContractService' but found: 'ContractServiceWithoutServiceConfig'",
+                HTTP_156);
+        assertError(diagnosticResult, 4, "'serviceType' is not allowed in the service which is not implemented" +
+                " via the 'http:ServiceContract' type", HTTP_157);
+        assertError(diagnosticResult, 5, "resource function which is not defined in the service contract type:" +
+                " 'ContractServiceWithResource', is not allowed", HTTP_158);
+        assertError(diagnosticResult, 6, "'http:ResourceConfig' annotation is not allowed for resource function " +
+                "implemented via the 'http:ServiceContract' type. The HTTP annotations are inferred from the service" +
+                " contract type", HTTP_159);
+        assertError(diagnosticResult, 7, "'http:Header' annotation is not allowed for resource function implemented" +
+                " via the 'http:ServiceContract' type. The HTTP annotations are inferred from the service contract" +
+                " type", HTTP_160);
+    }
+
+    @Test
+    public void testServiceContractSuccess() {
+        Package currentPackage = loadPackage("sample_package_41");
+        PackageCompilation compilation = currentPackage.getCompilation();
+        DiagnosticResult diagnosticResult = compilation.diagnosticResult();
+        Assert.assertEquals(diagnosticResult.errorCount(), 0);
     }
 }

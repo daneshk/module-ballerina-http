@@ -55,13 +55,14 @@ public class HttpCarbonMessage {
 
     protected HttpMessage httpMessage;
     private EntityCollector blockingEntityCollector;
-    private Map<String, Object> properties = new HashMap<>(Constants.HTTP_CARBON_MESSAGE_PROPERTIES_MAP_DEFAULT_SIZE);
+    private final Map<String, Object> properties =
+            new HashMap<>(Constants.HTTP_CARBON_MESSAGE_PROPERTIES_MAP_DEFAULT_SIZE);
 
     private MessageFuture messageFuture;
     private final ServerConnectorFuture httpOutboundRespFuture = new HttpWsServerConnectorFuture();
     private final DefaultHttpResponseFuture httpOutboundRespStatusFuture = new DefaultHttpResponseFuture();
     private final Observable contentObservable = new DefaultObservable();
-    private HttpHeaders httpTrailerHeaders = new DefaultLastHttpContent().trailingHeaders();
+    private final HttpHeaders httpTrailerHeaders = new DefaultLastHttpContent().trailingHeaders();
     private IOException ioException;
     public ListenerReqRespStateManager listenerReqRespStateManager;
     private Http2MessageStateContext http2MessageStateContext;
@@ -79,6 +80,7 @@ public class HttpCarbonMessage {
     private String httpMethod;
     private String requestUrl;
     private Integer httpStatusCode;
+    private Integer contentSize = 0;
     private boolean contentReleased = false;
 
     public HttpCarbonMessage(HttpMessage httpMessage, Listener contentListener) {
@@ -115,9 +117,9 @@ public class HttpCarbonMessage {
             blockingEntityCollector.addHttpContent(httpContent);
             if (messageFuture.isMessageListenerSet()) {
                 messageFuture.notifyMessageListener(blockingEntityCollector.getHttpContent());
-                //This should only be called once the message listener is set and the HttpContent is retrieved from the
-                //blocking entity collector. Calling this before that will raise a race condition in passthrough
-                //scenario.
+                //This should only be called once the message listener is set and the HttpContent is retrieved
+                // from the blocking entity collector. Calling this before that will raise a race condition in
+                // passthrough scenario.
                 contentObservable.notifyGetListener(httpContent);
             }
             // We remove the feature as the message has reached it life time. If there is a need
@@ -144,6 +146,9 @@ public class HttpCarbonMessage {
     public HttpContent getHttpContent() {
         HttpContent httpContent = this.blockingEntityCollector.getHttpContent();
         this.contentObservable.notifyGetListener(httpContent);
+        if (httpContent != null) {
+            this.contentSize += httpContent.content().readableBytes();
+        }
         return httpContent;
     }
 
@@ -305,11 +310,7 @@ public class HttpCarbonMessage {
     }
 
     public Object getProperty(String key) {
-        if (properties != null) {
-            return properties.get(key);
-        } else {
-            return null;
-        }
+        return properties.get(key);
     }
 
     public synchronized void removeMessageFuture() {
@@ -545,6 +546,10 @@ public class HttpCarbonMessage {
 
     public boolean isPipeliningEnabled() {
         return pipeliningEnabled;
+    }
+
+    public Integer getContentSize() {
+        return contentSize;
     }
 
     public void setContentReleased(boolean contentReleased) {

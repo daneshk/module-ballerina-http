@@ -24,6 +24,7 @@ import ballerina/log;
 # + lbRule - Load balancing rule
 # + failover - Whether to fail over in case of a failure
 # + requireValidation - Enables the inbound payload validation functionalty which provided by the constraint package
+# + requireLaxDataBinding - Enables or disalbles relaxed data binding.
 public client isolated class LoadBalanceClient {
     *ClientObject;
 
@@ -31,6 +32,7 @@ public client isolated class LoadBalanceClient {
     private LoadBalancerRule lbRule;
     private final boolean failover;
     private final boolean requireValidation;
+    private final boolean requireLaxDataBinding;
 
     # Load Balancer adds an additional layer to the HTTP client to make network interactions more resilient.
     #
@@ -57,6 +59,7 @@ public client isolated class LoadBalanceClient {
             self.lbRule = loadBalancerRoundRobinRule;
         }
         self.requireValidation = loadBalanceClientConfig.validation;
+        self.requireLaxDataBinding = loadBalanceClientConfig.laxDataBinding;
         return;
     }
 
@@ -66,7 +69,7 @@ public client isolated class LoadBalanceClient {
     # + message - An HTTP outbound request or any allowed payload
     # + headers - The entity headers
     # + mediaType - The MIME type header of the request entity
-    # + targetType - HTTP response or `anydata`, which is expected to be returned after data binding
+    # + targetType - HTTP response, `anydata` or stream of HTTP SSE, which is expected to be returned after data binding
     # + params - The query parameters
     # + return - The response or the payload (if the `targetType` is configured) or an `http:ClientError` if failed to
     #            establish the communication with the upstream server or a data binding failure
@@ -82,7 +85,7 @@ public client isolated class LoadBalanceClient {
     # + message - An HTTP outbound request or any allowed payload
     # + headers - The entity headers
     # + mediaType - The MIME type header of the request entity
-    # + targetType - HTTP response or `anydata`, which is expected to be returned after data binding
+    # + targetType - HTTP response, `anydata` or stream of HTTP SSE, which is expected to be returned after data binding
     # + return - The response or the payload (if the `targetType` is configured) or an `http:ClientError` if failed to
     #            establish the communication with the upstream server or a data binding failure
     remote isolated function post(string path, RequestMessage message, map<string|string[]>? headers = (),
@@ -92,11 +95,11 @@ public client isolated class LoadBalanceClient {
     } external;
     
     private isolated function processPost(string path, RequestMessage message, TargetType targetType, 
-            string? mediaType, map<string|string[]>? headers) returns Response|anydata|ClientError {
+            string? mediaType, map<string|string[]>? headers) returns Response|stream<SseEvent, error?>|anydata|ClientError {
         Request req = check buildRequest(message, mediaType);
         populateOptions(req, mediaType, headers);
         var result = self.performLoadBalanceAction(path, req, HTTP_POST);
-        return processResponse(result, targetType, self.requireValidation);
+        return processResponse(result, targetType, self.requireValidation, self.requireLaxDataBinding);
     }
 
     # The PUT resource function implementation of the LoadBalancer Connector.
@@ -105,7 +108,7 @@ public client isolated class LoadBalanceClient {
     # + message - An HTTP outbound request or any allowed payload
     # + headers - The entity headers
     # + mediaType - The MIME type header of the request entity
-    # + targetType - HTTP response or `anydata`, which is expected to be returned after data binding
+    # + targetType - HTTP response, `anydata` or stream of HTTP SSE, which is expected to be returned after data binding
     # + params - The query parameters
     # + return - The response or the payload (if the `targetType` is configured) or an `http:ClientError` if failed to
     #            establish the communication with the upstream server or a data binding failure
@@ -121,7 +124,7 @@ public client isolated class LoadBalanceClient {
     # + message - An HTTP outbound request or any allowed payload
     # + headers - The entity headers
     # + mediaType - The MIME type header of the request entity
-    # + targetType - HTTP response or `anydata`, which is expected to be returned after data binding
+    # + targetType - HTTP response, `anydata` or stream of HTTP SSE, which is expected to be returned after data binding
     # + return - The response or the payload (if the `targetType` is configured) or an `http:ClientError` if failed to
     #            establish the communication with the upstream server or a data binding failure
     remote isolated function put(string path, RequestMessage message, map<string|string[]>? headers = (),
@@ -131,11 +134,11 @@ public client isolated class LoadBalanceClient {
     } external;
 
     private isolated function processPut(string path, RequestMessage message, TargetType targetType,
-            string? mediaType, map<string|string[]>? headers) returns Response|anydata|ClientError {
+            string? mediaType, map<string|string[]>? headers) returns Response|stream<SseEvent, error?>|anydata|ClientError {
         Request req = check buildRequest(message, mediaType);
         populateOptions(req, mediaType, headers);
         var result = self.performLoadBalanceAction(path, req, HTTP_PUT);
-        return processResponse(result, targetType, self.requireValidation);
+        return processResponse(result, targetType, self.requireValidation, self.requireLaxDataBinding);
     }
 
     # The PATCH resource function implementation of the LoadBalancer Connector.
@@ -144,7 +147,7 @@ public client isolated class LoadBalanceClient {
     # + message - An HTTP outbound request or any allowed payload
     # + headers - The entity headers
     # + mediaType - The MIME type header of the request entity
-    # + targetType - HTTP response or `anydata`, which is expected to be returned after data binding
+    # + targetType - HTTP response, `anydata` or stream of HTTP SSE, which is expected to be returned after data binding
     # + params - The query parameters
     # + return - The response or the payload (if the `targetType` is configured) or an `http:ClientError` if failed to
     #            establish the communication with the upstream server or a data binding failure
@@ -160,7 +163,7 @@ public client isolated class LoadBalanceClient {
     # + message - An HTTP outbound request or any allowed payload
     # + headers - The entity headers
     # + mediaType - The MIME type header of the request entity
-    # + targetType - HTTP response or `anydata`, which is expected to be returned after data binding
+    # + targetType - HTTP response, `anydata` or stream of HTTP SSE, which is expected to be returned after data binding
     # + return - The response or the payload (if the `targetType` is configured) or an `http:ClientError` if failed to
     #            establish the communication with the upstream server or a data binding failure
     remote isolated function patch(string path, RequestMessage message, map<string|string[]>? headers = (),
@@ -170,11 +173,11 @@ public client isolated class LoadBalanceClient {
     } external;
 
     private isolated function processPatch(string path, RequestMessage message, TargetType targetType,
-            string? mediaType, map<string|string[]>? headers) returns Response|anydata|ClientError {
+            string? mediaType, map<string|string[]>? headers) returns Response|stream<SseEvent, error?>|anydata|ClientError {
         Request req = check buildRequest(message, mediaType);
         populateOptions(req, mediaType, headers);
         var result = self.performLoadBalanceAction(path, req, HTTP_PATCH);
-        return processResponse(result, targetType, self.requireValidation);
+        return processResponse(result, targetType, self.requireValidation, self.requireLaxDataBinding);
     }
 
     # The DELETE resource function implementation of the LoadBalancer Connector.
@@ -183,7 +186,7 @@ public client isolated class LoadBalanceClient {
     # + message - An optional HTTP outbound request or any allowed payload
     # + headers - The entity headers
     # + mediaType - The MIME type header of the request entity
-    # + targetType - HTTP response or `anydata`, which is expected to be returned after data binding
+    # + targetType - HTTP response, `anydata` or stream of HTTP SSE, which is expected to be returned after data binding
     # + params - The query parameters
     # + return - The response or the payload (if the `targetType` is configured) or an `http:ClientError` if failed to
     #            establish the communication with the upstream server or a data binding failure
@@ -199,7 +202,7 @@ public client isolated class LoadBalanceClient {
     # + message - An optional HTTP outbound request message or any allowed payload
     # + headers - The entity headers
     # + mediaType - The MIME type header of the request entity
-    # + targetType - HTTP response or `anydata`, which is expected to be returned after data binding
+    # + targetType - HTTP response, `anydata` or stream of HTTP SSE, which is expected to be returned after data binding
     # + return - The response or the payload (if the `targetType` is configured) or an `http:ClientError` if failed to
     #            establish the communication with the upstream server or a data binding failure
     remote isolated function delete(string path, RequestMessage message = (), map<string|string[]>? headers = (),
@@ -209,11 +212,11 @@ public client isolated class LoadBalanceClient {
     } external;
 
     private isolated function processDelete(string path, RequestMessage message, TargetType targetType,
-            string? mediaType, map<string|string[]>? headers) returns Response|anydata|ClientError {
+            string? mediaType, map<string|string[]>? headers) returns Response|stream<SseEvent, error?>|anydata|ClientError {
         Request req = check buildRequest(message, mediaType);
         populateOptions(req, mediaType, headers);
         var result = self.performLoadBalanceAction(path, req, HTTP_DELETE);
-        return processResponse(result, targetType, self.requireValidation);
+        return processResponse(result, targetType, self.requireValidation, self.requireLaxDataBinding);
     }
 
     # The HEAD resource function implementation of the LoadBalancer Connector.
@@ -242,7 +245,7 @@ public client isolated class LoadBalanceClient {
     #
     # + path - Request path
     # + headers - The entity headers
-    # + targetType - HTTP response or `anydata`, which is expected to be returned after data binding
+    # + targetType - HTTP response, `anydata` or stream of HTTP SSE, which is expected to be returned after data binding
     # + params - The query parameters
     # + return - The response or the payload (if the `targetType` is configured) or an `http:ClientError` if failed to
     #            establish the communication with the upstream server or a data binding failure
@@ -256,7 +259,7 @@ public client isolated class LoadBalanceClient {
     #
     # + path - Request path
     # + headers - The entity headers
-    # + targetType - HTTP response or `anydata`, which is expected to be returned after data binding
+    # + targetType - HTTP response, `anydata` or stream of HTTP SSE, which is expected to be returned after data binding
     # + return - The response or the payload (if the `targetType` is configured) or an `http:ClientError` if failed to
     #            establish the communication with the upstream server or a data binding failure
     remote isolated function get(string path, map<string|string[]>? headers = (), TargetType targetType = <>)
@@ -265,17 +268,17 @@ public client isolated class LoadBalanceClient {
     } external;
 
     private isolated function processGet(string path, map<string|string[]>? headers, TargetType targetType)
-            returns Response|anydata|ClientError {
+            returns Response|stream<SseEvent, error?>|anydata|ClientError {
         Request req = buildRequestWithHeaders(headers);
         var result = self.performLoadBalanceAction(path, req, HTTP_GET);
-        return processResponse(result, targetType, self.requireValidation);
+        return processResponse(result, targetType, self.requireValidation, self.requireLaxDataBinding);
     }
 
     # The OPTIONS resource function implementation of the LoadBalancer Connector.
     #
     # + path - Request path
     # + headers - The entity headers
-    # + targetType - HTTP response or `anydata`, which is expected to be returned after data binding
+    # + targetType - HTTP response, `anydata` or stream of HTTP SSE, which is expected to be returned after data binding
     # + params - The query parameters
     # + return - The response or the payload (if the `targetType` is configured) or an `http:ClientError` if failed to
     #            establish the communication with the upstream server or a data binding failure
@@ -289,7 +292,7 @@ public client isolated class LoadBalanceClient {
     #
     # + path - Request path
     # + headers - The entity headers
-    # + targetType - HTTP response or `anydata`, which is expected to be returned after data binding
+    # + targetType - HTTP response, `anydata` or stream of HTTP SSE, which is expected to be returned after data binding
     # + return - The response or the payload (if the `targetType` is configured) or an `http:ClientError` if failed to
     #            establish the communication with the upstream server or a data binding failure
     remote isolated function options(string path, map<string|string[]>? headers = (), TargetType targetType = <>)
@@ -298,10 +301,10 @@ public client isolated class LoadBalanceClient {
     } external;
 
     private isolated function processOptions(string path, map<string|string[]>? headers, TargetType targetType)
-            returns Response|anydata|ClientError {
+            returns Response|stream<SseEvent, error?>|anydata|ClientError {
         Request req = buildRequestWithHeaders(headers);
         var result = self.performLoadBalanceAction(path, req, HTTP_OPTIONS);
-        return processResponse(result, targetType, self.requireValidation);
+        return processResponse(result, targetType, self.requireValidation, self.requireLaxDataBinding);
     }
 
     # The EXECUTE remote function implementation of the LoadBalancer Connector.
@@ -311,7 +314,7 @@ public client isolated class LoadBalanceClient {
     # + message - An HTTP outbound request or any allowed payload
     # + headers - The entity headers
     # + mediaType - The MIME type header of the request entity
-    # + targetType - HTTP response or `anydata`, which is expected to be returned after data binding
+    # + targetType - HTTP response, `anydata` or stream of HTTP SSE, which is expected to be returned after data binding
     # + return - The response or the payload (if the `targetType` is configured) or an `http:ClientError` if failed to
     #            establish the communication with the upstream server or a data binding failure
     remote isolated function execute(string httpVerb, string path, RequestMessage message,
@@ -322,18 +325,18 @@ public client isolated class LoadBalanceClient {
 
     private isolated function processExecute(string httpVerb, string path, RequestMessage message,
             TargetType targetType, string? mediaType, map<string|string[]>? headers)
-            returns Response|anydata|ClientError {
+            returns Response|stream<SseEvent, error?>|anydata|ClientError {
         Request req = check buildRequest(message, mediaType);
         populateOptions(req, mediaType, headers);
         var result = self.performLoadBalanceExecuteAction(path, req, httpVerb);
-        return processResponse(result, targetType, self.requireValidation);
+        return processResponse(result, targetType, self.requireValidation, self.requireLaxDataBinding);
     }
 
     # The FORWARD remote function implementation of the LoadBalancer Connector.
     #
     # + path - Resource path
     # + request - An HTTP request
-    # + targetType - HTTP response or `anydata`, which is expected to be returned after data binding
+    # + targetType - HTTP response, `anydata` or stream of HTTP SSE, which is expected to be returned after data binding
     # + return - The response or the payload (if the `targetType` is configured) or an `http:ClientError` if failed to
     #            establish the communication with the upstream server or a data binding failure
     remote isolated function forward(string path, Request request, TargetType targetType = <>)
@@ -342,14 +345,15 @@ public client isolated class LoadBalanceClient {
     } external;
 
     private isolated function processForward(string path, Request request, TargetType targetType)
-            returns Response|anydata|ClientError {
+            returns Response|stream<SseEvent, error?>|anydata|ClientError {
         var result = self.performLoadBalanceAction(path, request, HTTP_FORWARD);
-        return processResponse(result, targetType, self.requireValidation);
+        return processResponse(result, targetType, self.requireValidation, self.requireLaxDataBinding);
     }
 
     # The submit implementation of the LoadBalancer Connector.
     #
-    # + httpVerb - The HTTP verb value
+    # + httpVerb - The HTTP verb value. The HTTP verb is case-sensitive. Use the `http:Method` type to specify the
+    #              the standard HTTP methods.
     # + path - The resource path
     # + message - An HTTP outbound request or any allowed payload
     # + return - An `http:HttpFuture` that represents an asynchronous service invocation or else an `http:ClientError` if the submission

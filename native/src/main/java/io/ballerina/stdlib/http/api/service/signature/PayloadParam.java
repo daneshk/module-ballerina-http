@@ -18,11 +18,11 @@
 
 package io.ballerina.stdlib.http.api.service.signature;
 
-import io.ballerina.runtime.api.TypeTags;
 import io.ballerina.runtime.api.creators.ValueCreator;
 import io.ballerina.runtime.api.types.ArrayType;
 import io.ballerina.runtime.api.types.IntersectionType;
 import io.ballerina.runtime.api.types.Type;
+import io.ballerina.runtime.api.types.TypeTags;
 import io.ballerina.runtime.api.types.UnionType;
 import io.ballerina.runtime.api.utils.TypeUtils;
 import io.ballerina.runtime.api.values.BError;
@@ -39,7 +39,6 @@ import io.ballerina.stdlib.mime.util.MimeConstants;
 import java.util.ArrayList;
 import java.util.List;
 
-import static io.ballerina.runtime.api.TypeTags.ARRAY_TAG;
 import static io.ballerina.stdlib.http.api.HttpErrorType.INTERNAL_PAYLOAD_BINDING_LISTENER_ERROR;
 import static io.ballerina.stdlib.http.api.HttpErrorType.INTERNAL_PAYLOAD_VALIDATION_LISTENER_ERROR;
 import static io.ballerina.stdlib.http.api.service.signature.builder.AbstractPayloadBuilder.getBuilder;
@@ -60,10 +59,12 @@ public class PayloadParam implements Parameter {
     private final List<String> mediaTypes = new ArrayList<>();
     private Type customParameterType;
     private final boolean requireConstraintValidation;
+    private final boolean laxDataBinding;
 
-    PayloadParam(String token, boolean constraintValidation) {
+    PayloadParam(String token, boolean constraintValidation, boolean laxDataBinding) {
         this.token = token;
         this.requireConstraintValidation = constraintValidation;
+        this.laxDataBinding = laxDataBinding;
     }
 
     public void init(Type type, Type customParameterType, int index) {
@@ -79,7 +80,7 @@ public class PayloadParam implements Parameter {
     }
 
     public int getIndex() {
-        return this.index * 2;
+        return this.index;
     }
 
     public Type getType() {
@@ -136,48 +137,47 @@ public class PayloadParam implements Parameter {
         // Check if datasource is already available from interceptor service read
         // TODO : Validate the dataSource type with payload type and populate
         if (dataSource != null) {
-            index = populateFeedWithAlreadyBuiltPayload(paramFeed, inRequestEntity, index, payloadType, dataSource);
+            populateFeedWithAlreadyBuiltPayload(paramFeed, inRequestEntity, index, payloadType, dataSource);
         } else {
-            index = populateFeedWithFreshPayload(httpCarbonMessage, paramFeed, inRequestEntity, index, payloadType);
+            populateFeedWithFreshPayload(httpCarbonMessage, paramFeed, inRequestEntity, index, payloadType);
         }
-        paramFeed[index] = true;
     }
 
-    private int populateFeedWithAlreadyBuiltPayload(Object[] paramFeed, BObject inRequestEntity, int index,
+    private void populateFeedWithAlreadyBuiltPayload(Object[] paramFeed, BObject inRequestEntity, int index,
                                                     Type payloadType, Object dataSource) {
         try {
             switch (payloadType.getTag()) {
-                case ARRAY_TAG:
+                case TypeTags.ARRAY_TAG:
                     int actualTypeTag = TypeUtils.getReferredType(((ArrayType) payloadType).getElementType()).getTag();
                     if (actualTypeTag == TypeTags.BYTE_TAG) {
-                        paramFeed[index++] = validateConstraints(dataSource);
+                        paramFeed[index] = validateConstraints(dataSource);
                     } else if (actualTypeTag == TypeTags.RECORD_TYPE_TAG) {
-                        dataSource = JsonToRecordConverter.convert(payloadType, inRequestEntity, readonly);
-                        paramFeed[index++]  = validateConstraints(dataSource);
+                        dataSource = JsonToRecordConverter.convert(payloadType, inRequestEntity, readonly,
+                                laxDataBinding);
+                        paramFeed[index]  = validateConstraints(dataSource);
                     } else {
                         throw HttpUtil.createHttpError("incompatible element type found inside an array " +
                                                        ((ArrayType) payloadType).getElementType().getName());
                     }
                     break;
                 case TypeTags.RECORD_TYPE_TAG:
-                    dataSource = JsonToRecordConverter.convert(payloadType, inRequestEntity, readonly);
-                    paramFeed[index++]  = validateConstraints(dataSource);
+                    dataSource = JsonToRecordConverter.convert(payloadType, inRequestEntity, readonly, laxDataBinding);
+                    paramFeed[index]  = validateConstraints(dataSource);
                     break;
                 default:
-                    paramFeed[index++] = validateConstraints(dataSource);
+                    paramFeed[index] = validateConstraints(dataSource);
             }
         } catch (BError ex) {
             String message = "data binding failed: " + HttpUtil.getPrintableErrorMsg(ex);
             throw HttpUtil.createHttpStatusCodeError(INTERNAL_PAYLOAD_BINDING_LISTENER_ERROR, message);
         }
-        return index;
     }
 
     private int populateFeedWithFreshPayload(HttpCarbonMessage inboundMessage, Object[] paramFeed,
                                              BObject inRequestEntity, int index, Type payloadType) {
         try {
             String contentType = HttpUtil.getContentTypeFromTransportMessage(inboundMessage);
-            AbstractPayloadBuilder payloadBuilder = getBuilder(contentType, payloadType);
+            AbstractPayloadBuilder payloadBuilder = getBuilder(contentType, payloadType, laxDataBinding);
             Object payloadBuilderValue = payloadBuilder.getValue(inRequestEntity, this.readonly);
             paramFeed[index] = validateConstraints(payloadBuilderValue);
             inboundMessage.setProperty(HttpConstants.ENTITY_OBJ, inRequestEntity);

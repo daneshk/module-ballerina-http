@@ -148,6 +148,11 @@ public type Local record {|
 # + gracefulStopTimeout - Grace period of time in seconds for listener gracefulStop
 # + socketConfig - Provides settings related to server socket configuration
 # + http2InitialWindowSize - Configuration to change the initial window size in HTTP/2
+# + minIdleTimeInStaleState - Minimum time in seconds for a connection to be kept open which has received a GOAWAY.
+#                             This only applies for HTTP/2. Default value is 5 minutes. If the value is set to -1,
+#                             the connection will be closed after all in-flight streams are completed
+# + timeBetweenStaleEviction - Time between the connection stale eviction runs in seconds. This only applies for HTTP/2.
+#                              Default value is 30 seconds
 public type ListenerConfiguration record {|
     string host = "0.0.0.0";
     ListenerHttp1Settings http1Settings = {};
@@ -159,6 +164,8 @@ public type ListenerConfiguration record {|
     decimal gracefulStopTimeout = DEFAULT_GRACEFULSTOP_TIMEOUT;
     ServerSocketConfig socketConfig = {};
     int http2InitialWindowSize = 65535;
+    decimal minIdleTimeInStaleState = 300;
+    decimal timeBetweenStaleEviction = 30;
 |};
 
 # Provides a set of cloneable configurations for HTTP listener.
@@ -240,7 +247,8 @@ public type ListenerSecureSocket record {|
                         "TLS_DHE_RSA_WITH_AES_128_CBC_SHA256", "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA",
                         "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA", "TLS_DHE_RSA_WITH_AES_128_CBC_SHA",
                         "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256", "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
-                        "TLS_DHE_RSA_WITH_AES_128_GCM_SHA256"];
+                        "TLS_DHE_RSA_WITH_AES_128_GCM_SHA256", "TLS_AES_256_GCM_SHA384",
+                        "TLS_CHACHA20_POLY1305_SHA256", "TLS_AES_128_GCM_SHA256"];
     boolean shareSession = true;
     decimal handshakeTimeout?;
     decimal sessionTimeout?;

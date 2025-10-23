@@ -1,4 +1,3 @@
-
 # Change Log
 This file contains all the notable changes done to the Ballerina HTTP package through the releases.
 
@@ -7,9 +6,105 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- [Fix IDLE connection eviction issues with HTTP/2 connections](https://github.com/ballerina-platform/ballerina-library/issues/8129)
+- [Address `CVE-2025-55163` Netty vulnerability](https://github.com/ballerina-platform/ballerina-library/issues/8174)
+- [Prevent auth headers in redirected requests when disallowed](https://github.com/ballerina-platform/ballerina-library/issues/8216)
+- [Address `CVE-2025-58056` and `CVE-2025-58057` security vulnerabilities in Netty](https://github.com/ballerina-platform/ballerina-library/issues/8214)
+- [Migrate compiler plugin task for OpenAPI spec generation from `openapi` tool to the `http` module](https://github.com/ballerina-platform/ballerina-library/issues/8237)
+- [Fix hanging issue when load testing with relatively larger payload](https://github.com/ballerina-platform/ballerina-library/issues/8271)
+
 ### Added
 
+- [Add support for dispatching URLs with special characters to the associated resource signature with special characters](https://github.com/ballerina-platform/ballerina-library/issues/4154)
+- [Implement static analysis rule to analyze server-side requests that are vulnerable to traversing attacks](https://github.com/ballerina-platform/ballerina-library/issues/8175)
+- [Implement static analysis rule to analyze unsecure HTTP redirections](https://github.com/ballerina-platform/ballerina-library/issues/8254)
+
+## [2.14.2] - 2025-06-23
+
+### Fixed
+
+- [Fix Library/Connector API doc issues in BI editor](https://github.com/ballerina-platform/ballerina-library/issues/7736)
+
+## [2.14.1] - 2025-04-21
+
+### Fixed
+
+- [Fix inconsistencies in the `Set-Cookie` parser method](https://github.com/ballerina-platform/ballerina-library/issues/7807)
+
+## [2.13.4] - 2025-03-05
+
+### Changed
+
+- [Move SSL context creation to the client initialization](https://github.com/ballerina-platform/ballerina-library/issues/1798)
+- [Update netty tcnative version](https://github.com/ballerina-platform/ballerina-library/issues/7650)
+- [Supporting X25519MLKEM768 key encapsulation for TLS 1.3](https://github.com/ballerina-platform/ballerina-library/issues/7650)
+- [Update bouncy castle version to `1.80`](https://github.com/ballerina-platform/ballerina-library/issues/7683)
+
+### Fixed
+
+- [Add TLSv1.3 supported cipher suites to the default configuration](https://github.com/ballerina-platform/ballerina-library/issues/7658)
+
+### Added
+
+- [Add an API to convert response object to status response record](https://github.com/ballerina-platform/ballerina-library/issues/7667)
+- [Add default HTTP listener](https://github.com/ballerina-platform/ballerina-library/issues/7514)
+
+## [2.13.3] - 2025-02-20
+
+### Added
+
+- [Add idle based eviction for HTTP/2 connections](https://github.com/ballerina-platform/ballerina-library/issues/7309)
+
+## [2.13.2] - 2025-02-14
+
+### Changed
+
+- [Downgrade netty tcnative version](https://github.com/ballerina-platform/ballerina-library/issues/7584)
+
+## [2.13.1] - 2025-02-11
+
+### Fixed
+
+- [Address Netty security vulnerabilities: `CVE-2025-24970` and `CVE-2025-25193`](https://github.com/ballerina-platform/ballerina-library/issues/7571)
+
+## [2.13.0] - 2025-02-07
+
+### Added
+
+- [Add `anydata` support for `setPayload` methods in the request and response objects](https://github.com/ballerina-platform/ballerina-library/issues/6954)
+- [Improve `@http:Query` annotation to overwrite the query parameter name in client](https://github.com/ballerina-platform/ballerina-library/issues/6983)
+- [Improve `@http:Query` annotation to overwrite the query parameter name in service](https://github.com/ballerina-platform/ballerina-library/issues/7006)
+- [Add header name mapping support in record fields](https://github.com/ballerina-platform/ballerina-library/issues/7018)
+- [Introduce util functions to convert query and header record with the `http:Query` and the `http:Header` annotations](https://github.com/ballerina-platform/ballerina-library/issues/7019)
+- [Migrate client and service data binding lang utils usage into data.jsondata module utils `toJson` and `parserAsType`](https://github.com/ballerina-platform/ballerina-library/issues/6747)
+- [Add static code rules](https://github.com/ballerina-platform/ballerina-library/issues/7283)
+- [Add relax data binding support for service and client data binding](https://github.com/ballerina-platform/ballerina-library/issues/7366)
+- [Add support for configuring server name to be used in the SSL SNI extension](https://github.com/ballerina-platform/ballerina-library/issues/7435)
+
+### Fixed
+
+- [Address CVE-2024-7254 vulnerability](https://github.com/ballerina-platform/ballerina-library/issues/7013)
+- [Fix duplicating `Content-Type` header via the `addHeader` method](https://github.com/ballerina-platform/ballerina-library/issues/7268)
+- [Update netty version](https://github.com/ballerina-platform/ballerina-library/issues/7358)
+- [Fix the issue of not being able to configure only server name in the secureSocket config](https://github.com/ballerina-platform/ballerina-library/issues/7443)
+- [Fix rest path parameter generation with decoded path segments](https://github.com/ballerina-platform/ballerina-library/issues/7430)
+
+## [2.12.0] - 2024-08-20
+
+### Added
+- [Add support for Server-Sent Events](https://github.com/ballerina-platform/ballerina-library/issues/6687)
 - [Introduce default status code response record](https://github.com/ballerina-platform/ballerina-library/issues/6491)
+- [Add connection eviction feature to handle connections that receive GO_AWAY from the client](https://github.com/ballerina-platform/ballerina-library/issues/6734)
+- [Enhance the configurability of Ballerina access logging by introducing multiple configuration options.](https://github.com/ballerina-platform/ballerina-library/issues/6111)
+- [Introduce HTTP service contract object type](https://github.com/ballerina-platform/ballerina-library/issues/6378)
+- [Add default HTTP listener](https://github.com/ballerina-platform/ballerina-library/issues/7514)
+
+### Fixed
+
+- [Fix number format exception with decimal values for cache configuration](https://github.com/ballerina-platform/ballerina-library/issues/6765)
+- [Fix cookie path resolution logic](https://github.com/ballerina-platform/ballerina-library/issues/6788)
 
 ## [2.11.2] - 2024-06-14
 

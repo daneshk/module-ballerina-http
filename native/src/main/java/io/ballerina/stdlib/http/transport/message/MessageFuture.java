@@ -68,7 +68,7 @@ public class MessageFuture {
         return messageListener != null;
     }
 
-    public synchronized HttpContent sync() {
+    public HttpContent sync() {
         return this.httpCarbonMessage.getBlockingEntityCollector().getHttpContent();
     }
 }

@@ -27,12 +27,14 @@ import io.ballerina.runtime.api.values.BMap;
 import io.ballerina.runtime.api.values.BString;
 import io.ballerina.stdlib.http.api.HttpConstants;
 import io.ballerina.stdlib.http.api.HttpUtil;
+import io.ballerina.stdlib.http.api.nativeimpl.ExternUtils;
 import io.ballerina.stdlib.http.transport.message.HttpCarbonMessage;
 import io.netty.handler.codec.http.HttpHeaders;
 
 import java.util.ArrayList;
 import java.util.List;
 
+import static io.ballerina.stdlib.http.api.HttpConstants.ANN_NAME_HEADER;
 import static io.ballerina.stdlib.http.api.HttpErrorType.INTERNAL_HEADER_BINDING_LISTENER_ERROR;
 import static io.ballerina.stdlib.http.api.service.signature.ParamUtils.castParam;
 import static io.ballerina.stdlib.http.api.service.signature.ParamUtils.castParamArray;
@@ -84,16 +86,14 @@ public class AllHeaderParams implements Parameter {
                             String.format(HEADER_BINDING_FAILED_ERROR_MSG, headerParam.getHeaderName()), null,
                             HttpUtil.createError(ex));
                 }
-                paramFeed[index++] = headerParam.validateConstraints(castedHeader);
-                paramFeed[index] = true;
+                paramFeed[index] = headerParam.validateConstraints(castedHeader);
                 continue;
             }
             String token = headerParam.getHeaderName();
             List<String> headerValues = httpHeaders.getAll(token);
             if (headerValues.isEmpty()) {
                 if (headerParam.isNilable() && treatNilableAsOptional) {
-                    paramFeed[index++] = null;
-                    paramFeed[index] = true;
+                    paramFeed[index] = null;
                     continue;
                 } else {
                     throw HttpUtil.createHttpStatusCodeError(INTERNAL_HEADER_BINDING_LISTENER_ERROR,
@@ -102,8 +102,7 @@ public class AllHeaderParams implements Parameter {
             }
             if (headerValues.size() == 1 && headerValues.get(0).isEmpty()) {
                 if (headerParam.isNilable()) {
-                    paramFeed[index++] = null;
-                    paramFeed[index] = true;
+                    paramFeed[index] = null;
                     continue;
                 } else {
                     throw HttpUtil.createHttpStatusCodeError(INTERNAL_HEADER_BINDING_LISTENER_ERROR,
@@ -125,8 +124,7 @@ public class AllHeaderParams implements Parameter {
                         String.format(HEADER_BINDING_FAILED_ERROR_MSG, token), null, HttpUtil.createError(ex));
             }
 
-            paramFeed[index++] = headerParam.validateConstraints(castedHeaderValue);
-            paramFeed[index] = true;
+            paramFeed[index] = headerParam.validateConstraints(castedHeaderValue);
         }
     }
 
@@ -139,7 +137,9 @@ public class AllHeaderParams implements Parameter {
         int i = 0;
         for (String key : keys) {
             HeaderRecordParam.FieldParam field = headerRecordParam.getField(i++);
-            List<String> headerValues = httpHeaders.getAll(key);
+            String headerName = ExternUtils.getName(StringUtils.fromString(key), recordType,
+                    ANN_NAME_HEADER).getValue();
+            List<String> headerValues = httpHeaders.getAll(headerName);
             if (headerValues.isEmpty()) {
                 if (field.isNilable() && treatNilableAsOptional) {
                     recordValue.put(StringUtils.fromString(key), null);

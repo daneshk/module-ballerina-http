@@ -20,6 +20,7 @@ import ballerina/lang.'string as strings;
 import ballerina/url;
 import ballerina/mime;
 import http.httpscerr;
+import ballerina/data.jsondata;
 
 # The caller actions for responding to client requests.
 #
@@ -137,8 +138,9 @@ public isolated client class Caller {
         return nativeGetRemoteHostName(self);
     }
 
-    private isolated function returnResponse(anydata|StatusCodeResponse|Response message, string? returnMediaType,
-        HttpCacheConfig? cacheConfig, map<Link>? links) returns ListenerError? {
+    private isolated function returnResponse(
+        anydata|StatusCodeResponse|Response|stream<SseEvent, error?>|stream<SseEvent, error> message,
+        string? returnMediaType, HttpCacheConfig? cacheConfig, map<Link>? links) returns ListenerError? {
         Response response = new;
         boolean setETag = cacheConfig is () ? false: cacheConfig.setETag;
         boolean cacheCompatibleType = false;
@@ -168,6 +170,8 @@ public isolated client class Caller {
             if returnMediaType is string && !response.hasHeader(CONTENT_TYPE) {
                 response.setHeader(CONTENT_TYPE, returnMediaType);
             }
+        } else if message is stream<SseEvent, error?>|stream<SseEvent, error> {
+            response = createSseResponse(message);
         } else if message is anydata {
             setPayload(message, response, returnMediaType, setETag, links);
             if returnMediaType is string {
@@ -215,29 +219,11 @@ isolated function createStatusCodeResponse(StatusCodeResponse message, string? r
     response.statusCode = message.status.code;
 
     var headers = message?.headers;
-    if headers is map<string[]> || headers is map<int[]> || headers is map<boolean[]> {
-        foreach var [headerKey, headerValues] in headers.entries() {
-            string[] mappedValues = headerValues.'map(val => val.toString());
-            foreach string headerValue in mappedValues {
-                response.addHeader(headerKey, headerValue);
-            }
-        }
-    } else if headers is map<string> || headers is map<int> || headers is map<boolean> {
-        foreach var [headerKey, headerValue] in headers.entries() {
-            response.setHeader(headerKey, headerValue.toString());
-        }
-    } else if headers is map<string|int|boolean|string[]|int[]|boolean[]> {
-        foreach var [headerKey, headerValue] in headers.entries() {
-            if headerValue is string[] || headerValue is int[] || headerValue is boolean[] {
-                string[] mappedValues = headerValue.'map(val => val.toString());
-                foreach string value in mappedValues {
-                    response.addHeader(headerKey, value);
-                }
-            } else {
-                response.setHeader(headerKey, headerValue.toString());
-            }
-        }
+    if headers !is () {
+        map<string|string[]> headerMap = getHeaderMap(headers);
+        setHeaders(headerMap, response);
     }
+
     string? mediaType = retrieveMediaType(message, returnMediaType);
     setPayload(message?.body, response, mediaType, setETag, links);
     // Update content-type header according to the priority. (Highest to lowest)
@@ -249,6 +235,12 @@ isolated function createStatusCodeResponse(StatusCodeResponse message, string? r
         response.setHeader(CONTENT_TYPE, mediaType);
         return response;
     }
+    return response;
+}
+
+isolated function createSseResponse(stream<SseEvent, error?>|stream<SseEvent, error> eventStream) returns Response {
+    Response response = new;
+    response.setSseEventStream(eventStream);
     return response;
 }
 
@@ -379,7 +371,7 @@ isolated function retrieveUrlEncodedData(map<string> message) returns string|err
 }
 
 isolated function setJsonPayload(Response response, anydata payload, boolean setETag) {
-    var result = trap val:toJson(payload);
+    var result = trap jsondata:toJson(payload);
     if result is error {
         panic error InitializingOutboundResponseError(string `anydata to json conversion error: ${result.message()}`, result);
     }

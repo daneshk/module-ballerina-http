@@ -8,7 +8,7 @@ on:
                 required: true
                 default: master
             lang_version:
-                description: Ballerina Lang Version (If given ballerina lang buid will be skipped)
+                description: Ballerina Lang Version (If given ballerina lang build will be skipped)
                 required: false
                 default: ''
             native_image_options:
@@ -29,6 +29,7 @@ on:
             - 2201.7.x
             - 2201.8.x
             - 2201.9.x
+            - java21
         types: [opened, synchronize, reopened, labeled, unlabeled]
 
 concurrency:
@@ -43,9 +44,7 @@ jobs:
         with:
             lang_tag: ${{ inputs.lang_tag }}
             lang_version: ${{ inputs.lang_version }}
-            native_image_options: '-J-Xmx7G ${{ inputs.native_image_options }}'
+            native_image_options: ${{ inputs.native_image_options }}
             additional_ubuntu_build_flags: '-x :http-native:test -x :http-compiler-plugin-tests:test ${{ inputs.build_properties }}'
-            # additional_windows_build_flags: '-x :http-native:test -x :http-compiler-plugin-tests:test ${{ inputs.build_properties }}'
-            # TODO : Enable after fixing this issue : https://github.com/ballerina-platform/ballerina-lang/issues/38882
-            additional_windows_build_flags: '-x test'
+            additional_windows_build_flags: '-x :http-native:test -x :http-compiler-plugin-tests:test ${{ inputs.build_properties }}'
             java_tool_options: '-Dfile.encoding=UTF8'

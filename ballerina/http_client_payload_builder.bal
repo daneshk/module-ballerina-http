@@ -14,9 +14,10 @@
 // specific language governing permissions and limitations
 // under the License.
 
-import ballerina/log;
-import ballerina/jballerina.java;
 import ballerina/constraint;
+import ballerina/data.jsondata;
+import ballerina/jballerina.java;
+import ballerina/log;
 
 type nilType typedesc<()>;
 type xmlType typedesc<xml>;
@@ -24,10 +25,10 @@ type stringType typedesc<string>;
 type byteArrType typedesc<byte[]>;
 type mapStringType typedesc<map<string>>;
 
-isolated function performDataBinding(Response response, TargetType targetType) returns anydata|ClientError {
+isolated function performDataBinding(Response response, TargetType targetType, boolean requireLaxDataBinding) returns anydata|ClientError {
     string contentType = response.getContentType().trim();
     if contentType == "" {
-        return getBuilderFromType(response, targetType);
+        return getBuilderFromType(response, targetType, requireLaxDataBinding);
     }
     if XML_PATTERN.isFullMatch(contentType) {
         return xmlPayloadBuilder(response, targetType);
@@ -38,13 +39,13 @@ isolated function performDataBinding(Response response, TargetType targetType) r
     } else if OCTET_STREAM_PATTERN.isFullMatch(contentType) {
         return blobPayloadBuilder(response, targetType);
     } else if JSON_PATTERN.isFullMatch(contentType) {
-        return jsonPayloadBuilder(response, targetType);
+        return jsonPayloadBuilder(response, targetType, requireLaxDataBinding);
     } else {
-        return getBuilderFromType(response, targetType);
+        return getBuilderFromType(response, targetType, requireLaxDataBinding);
     }
 }
 
-isolated function getBuilderFromType(Response response, TargetType targetType) returns anydata|ClientError {
+isolated function getBuilderFromType(Response response, TargetType targetType, boolean requireLaxDataBinding) returns anydata|ClientError {
     if targetType is typedesc<string> {
         return response.getTextPayload();
     } else if targetType is typedesc<string?> {
@@ -66,7 +67,7 @@ isolated function getBuilderFromType(Response response, TargetType targetType) r
     } else {
         // Due to the limitation of https://github.com/ballerina-platform/ballerina-spec/issues/1090
         // all the other types including union are considered as json subtypes.
-        return jsonPayloadBuilder(response, targetType);
+        return jsonPayloadBuilder(response, targetType, requireLaxDataBinding);
     }
 }
 
@@ -98,7 +99,7 @@ isolated function textPayloadBuilder(Response response, TargetType targetType) r
         }
         return payload;
     } else {
-         return getCommonError(response, targetType);
+        return getCommonError(response, targetType);
     }
 }
 
@@ -134,20 +135,20 @@ isolated function blobPayloadBuilder(Response response, TargetType targetType) r
     }
 }
 
-isolated function jsonPayloadBuilder(Response response, TargetType targetType) returns anydata|ClientError {
+isolated function jsonPayloadBuilder(Response response, TargetType targetType, boolean requireLaxDataBinding) returns anydata|ClientError {
     if targetType is typedesc<record {| anydata...; |}> {
-        return nonNilablejsonPayloadBuilder(response, targetType);
+        return nonNilablejsonPayloadBuilder(response, targetType, requireLaxDataBinding);
     } else if targetType is typedesc<record {| anydata...; |}?> {
-        return nilablejsonPayloadBuilder(response, targetType);
+        return nilablejsonPayloadBuilder(response, targetType, requireLaxDataBinding);
     } else if targetType is typedesc<record {| anydata...; |}[]> {
-        return nonNilablejsonPayloadBuilder(response, targetType);
+        return nonNilablejsonPayloadBuilder(response, targetType, requireLaxDataBinding);
     } else if targetType is typedesc<record {| anydata...; |}[]?> {
-        return nilablejsonPayloadBuilder(response, targetType);
+        return nilablejsonPayloadBuilder(response, targetType, requireLaxDataBinding);
     } else if targetType is typedesc<map<json>> {
         json payload = check response.getJsonPayload();
         return <map<json>> payload;
     } else if targetType is typedesc<anydata> {
-        return nilablejsonPayloadBuilder(response, targetType);
+        return nilablejsonPayloadBuilder(response, targetType, requireLaxDataBinding);
     } else {
         // Consume payload to avoid memory leaks
         byte[]|ClientError payload = response.getBinaryPayload();
@@ -158,18 +159,26 @@ isolated function jsonPayloadBuilder(Response response, TargetType targetType) r
     }
 }
 
-isolated function nonNilablejsonPayloadBuilder(Response response, typedesc<anydata> targetType)
+isolated function nonNilablejsonPayloadBuilder(Response response, typedesc<anydata> targetType, boolean requireLaxDataBinding)
         returns anydata|ClientError {
     json payload = check response.getJsonPayload();
-    var result = payload.fromJsonWithType(targetType);
+    jsondata:Options jsonParserOptions = {
+        enableConstraintValidation: false,
+        allowDataProjection: requireLaxDataBinding ? {nilAsOptionalField: true, absentAsNilableType: true} : false
+    };
+    var result = jsondata:parseAsType(payload, jsonParserOptions, targetType);
     return result is error ? createPayloadBindingError(result) : result;
 }
 
-isolated function nilablejsonPayloadBuilder(Response response, typedesc<anydata> targetType)
+isolated function nilablejsonPayloadBuilder(Response response, typedesc<anydata> targetType, boolean requireLaxDataBinding)
         returns anydata|ClientError {
     json|ClientError payload = response.getJsonPayload();
+    jsondata:Options jsonParserOptions = {
+        enableConstraintValidation: false,
+        allowDataProjection: requireLaxDataBinding ? {nilAsOptionalField: true, absentAsNilableType: true} : false
+    };
     if payload is json {
-        var result = payload.fromJsonWithType(targetType);
+        var result = jsondata:parseAsType(payload, jsonParserOptions, targetType);
         return result is error ? createPayloadBindingError(result) : result;
     } else {
         return payload is NoContentError ? () : payload;

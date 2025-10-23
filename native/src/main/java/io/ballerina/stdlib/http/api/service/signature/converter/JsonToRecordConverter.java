@@ -18,13 +18,26 @@
 
 package io.ballerina.stdlib.http.api.service.signature.converter;
 
+import io.ballerina.lib.data.jsondata.json.Native;
+import io.ballerina.runtime.api.creators.ValueCreator;
 import io.ballerina.runtime.api.types.Type;
-import io.ballerina.runtime.api.utils.ValueUtils;
 import io.ballerina.runtime.api.values.BError;
+import io.ballerina.runtime.api.values.BMap;
 import io.ballerina.runtime.api.values.BObject;
 import io.ballerina.runtime.api.values.BRefValue;
+import io.ballerina.runtime.api.values.BString;
+import io.ballerina.runtime.api.values.BTypedesc;
 import io.ballerina.stdlib.http.api.BallerinaConnectorException;
 import io.ballerina.stdlib.mime.util.EntityBodyHandler;
+
+import java.util.HashMap;
+import java.util.Map;
+
+import static io.ballerina.stdlib.http.api.HttpConstants.ALLOW_DATA_PROJECTION;
+import static io.ballerina.stdlib.http.api.HttpConstants.ENABLE_CONSTRAINT_VALIDATION;
+import static io.ballerina.stdlib.http.api.HttpConstants.PARSER_AS_TYPE_OPTIONS;
+import static io.ballerina.stdlib.http.api.HttpConstants.NIL_AS_OPTIONAL;
+import static io.ballerina.stdlib.http.api.HttpConstants.ABSENT_AS_NILABLE;
 
 /**
  * The converter binds the JSON payload to a record.
@@ -33,18 +46,18 @@ import io.ballerina.stdlib.mime.util.EntityBodyHandler;
  */
 public class JsonToRecordConverter {
 
-    public static Object convert(Type type, BObject entity, boolean readonly) {
-        Object recordEntity = getRecordEntity(entity, type);
+    public static Object convert(Type type, BObject entity, boolean readonly, boolean laxDataBinding) {
+        Object recordEntity = getRecordEntity(entity, type, laxDataBinding);
         if (readonly && recordEntity instanceof BRefValue) {
             ((BRefValue) recordEntity).freezeDirect();
         }
         return recordEntity;
     }
 
-    private static Object getRecordEntity(BObject entity, Type entityBodyType) {
+    private static Object getRecordEntity(BObject entity, Type entityBodyType, boolean laxDataBinding) {
         Object bjson = EntityBodyHandler.getMessageDataSource(entity) == null ? getBJsonValue(entity)
                 : EntityBodyHandler.getMessageDataSource(entity);
-        Object result = getRecord(entityBodyType, bjson);
+        Object result = getRecord(entityBodyType, bjson, laxDataBinding);
         if (result instanceof BError) {
             throw (BError) result;
         }
@@ -58,9 +71,22 @@ public class JsonToRecordConverter {
      * @param bJson          Represents the json value that needs to be converted
      * @return the relevant ballerina record or object
      */
-    private static Object getRecord(Type entityBodyType, Object bJson) {
+    private static Object getRecord(Type entityBodyType, Object bJson, boolean laxDataBinding) {
         try {
-            return ValueUtils.convert(bJson, entityBodyType);
+            Map<String, Object> valueMap = new HashMap<>();
+            valueMap.put(ENABLE_CONSTRAINT_VALIDATION, Boolean.FALSE);
+            BMap<BString, Object> mapValue = ValueCreator.createRecordValue(
+                    io.ballerina.lib.data.ModuleUtils.getModule(),
+                    PARSER_AS_TYPE_OPTIONS, valueMap);
+            if (laxDataBinding) {
+                BMap allowDataProjection = mapValue.getMapValue(ALLOW_DATA_PROJECTION);
+                allowDataProjection.put(NIL_AS_OPTIONAL, Boolean.TRUE);
+                allowDataProjection.put(ABSENT_AS_NILABLE, Boolean.TRUE);
+            } else {
+                mapValue.put(ALLOW_DATA_PROJECTION, Boolean.FALSE);
+            }
+            BTypedesc typedescValue = ValueCreator.createTypedescValue(entityBodyType);
+            return Native.parseAsType(bJson, mapValue, typedescValue);
         } catch (NullPointerException ex) {
             throw new BallerinaConnectorException("cannot convert payload to record type: " +
                                                           entityBodyType.getName());

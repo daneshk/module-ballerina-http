@@ -18,10 +18,10 @@
 
 package io.ballerina.stdlib.http.api.service.signature.builder;
 
-import io.ballerina.runtime.api.TypeTags;
 import io.ballerina.runtime.api.types.ArrayType;
 import io.ballerina.runtime.api.types.MapType;
 import io.ballerina.runtime.api.types.Type;
+import io.ballerina.runtime.api.types.TypeTags;
 import io.ballerina.runtime.api.types.TypedescType;
 import io.ballerina.runtime.api.types.UnionType;
 import io.ballerina.runtime.api.utils.TypeUtils;
@@ -32,13 +32,13 @@ import io.ballerina.stdlib.mime.util.HeaderUtil;
 import java.util.List;
 import java.util.Locale;
 
-import static io.ballerina.runtime.api.TypeTags.ARRAY_TAG;
-import static io.ballerina.runtime.api.TypeTags.BYTE_ARRAY_TAG;
-import static io.ballerina.runtime.api.TypeTags.BYTE_TAG;
-import static io.ballerina.runtime.api.TypeTags.MAP_TAG;
-import static io.ballerina.runtime.api.TypeTags.NULL_TAG;
-import static io.ballerina.runtime.api.TypeTags.STRING_TAG;
-import static io.ballerina.runtime.api.TypeTags.XML_TAG;
+import static io.ballerina.runtime.api.types.TypeTags.ARRAY_TAG;
+import static io.ballerina.runtime.api.types.TypeTags.BYTE_ARRAY_TAG;
+import static io.ballerina.runtime.api.types.TypeTags.BYTE_TAG;
+import static io.ballerina.runtime.api.types.TypeTags.MAP_TAG;
+import static io.ballerina.runtime.api.types.TypeTags.NULL_TAG;
+import static io.ballerina.runtime.api.types.TypeTags.STRING_TAG;
+import static io.ballerina.runtime.api.types.TypeTags.XML_TAG;
 
 /**
  * The abstract class to build and convert the payload based on the content-type header. If the content type is not
@@ -63,9 +63,9 @@ public abstract class AbstractPayloadBuilder {
      */
     public abstract Object getValue(BObject inRequestEntity, boolean readonly);
 
-    public static AbstractPayloadBuilder getBuilder(String contentType, Type payloadType) {
+    public static AbstractPayloadBuilder getBuilder(String contentType, Type payloadType, boolean laxDataBinding) {
         if (contentType == null || contentType.isEmpty()) {
-            return getBuilderFromType(payloadType);
+            return getBuilderFromType(payloadType, laxDataBinding);
         }
         contentType = contentType.toLowerCase(Locale.getDefault()).trim();
         String baseType = HeaderUtil.getHeaderValue(contentType);
@@ -78,22 +78,22 @@ public abstract class AbstractPayloadBuilder {
         } else if (baseType.matches(OCTET_STREAM_PATTERN)) {
             return new BinaryPayloadBuilder(payloadType);
         } else if (baseType.matches(JSON_PATTERN)) {
-            return new JsonPayloadBuilder(payloadType);
+            return new JsonPayloadBuilder(payloadType, laxDataBinding);
         } else {
-            return getBuilderFromType(payloadType);
+            return getBuilderFromType(payloadType, laxDataBinding);
         }
     }
 
-    private static AbstractPayloadBuilder getBuilderFromType(Type payloadType) {
+    private static AbstractPayloadBuilder getBuilderFromType(Type payloadType, boolean laxDataBinding) {
         switch (payloadType.getTag()) {
             case STRING_TAG:
                 return new StringPayloadBuilder(payloadType);
             case XML_TAG:
                 return new XmlPayloadBuilder(payloadType);
             case ARRAY_TAG:
-                return new ArrayBuilder(payloadType);
+                return new ArrayBuilder(payloadType, laxDataBinding);
             default:
-                return new JsonPayloadBuilder(payloadType);
+                return new JsonPayloadBuilder(payloadType, laxDataBinding);
         }
     }
 
