@@ -7,7 +7,7 @@ keywords = ["http", "network", "service", "listener", "client"]
 repository = "https://github.com/ballerina-platform/module-ballerina-http"
 icon = "icon.png"
 license = ["Apache-2.0"]
-distribution = "2201.13.0"
+distribution = "2201.13.3"
 
 [[package.modules]]
 name = "http.httpscerr"
@@ -171,7 +171,7 @@ version = "@lz4.version@"
 path = "./lib/lz4-java-@lz4.version@.jar"
 
 [[platform.java21.dependency]]
-groupId = "com.google.protobufl"
+groupId = "com.google.protobuf"
 artifactId = "protobuf-java"
 version = "@protobuf.version@"
 path = "./lib/protobuf-java-@protobuf.version@.jar"
