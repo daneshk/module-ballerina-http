@@ -24,6 +24,7 @@ The conforming implementation of the specification is released and included in t
         * 2.1.1. [Automatically starting the service](#211-automatically-starting-the-service)
         * 2.1.2. [Programmatically starting the service](#212-programmatically-starting-the-service)
         * 2.1.3. [Default listener](#213-default-listener)
+        * 2.1.4. [HTTP/2 stream concurrency](#214-http2-stream-concurrency)
     * 2.2. [Service](#22-service)
         * 2.2.1. [Service type](#221-service-type)
         * 2.2.2. [Service-base-path](#222-service-base-path)
@@ -177,6 +178,7 @@ public type ListenerConfiguration record {|
     string? server = ();
     RequestLimitConfigs requestLimits = {};
     int http2InitialWindowSize = 65535;
+    int http2MaxActiveStreams = 100;
     decimal minIdleTimeInStaleState = 300;
     decimal timeBetweenStaleEviction = 30;
 |};
@@ -253,6 +255,21 @@ httpVersion = "1.1"
 path = "resources/certs/ballerinaKeystore.p12"
 password = "ballerina"
 ```
+
+#### 2.1.4. HTTP/2 stream concurrency
+
+Each HTTP/2 connection can carry multiple requests concurrently over independent streams. The listener limits the
+number of concurrent streams a single connection can open, advertised to clients via the `SETTINGS_MAX_CONCURRENT_STREAMS`
+parameter, using the `http2MaxActiveStreams` field of the `ListenerConfiguration`. This defaults to `100`, the value
+recommended by [RFC 7540 Section 6.5.2](https://www.rfc-editor.org/rfc/rfc7540#section-6.5.2).
+
+```ballerina
+listener http:Listener h2Listener = new (9090, {
+    http2MaxActiveStreams: 500
+});
+```
+
+A client that reaches this limit on a connection opens an additional connection rather than stalling.
 
 ### 2.2. Service
 Service is a collection of resources functions, which are the network entry points of a ballerina program. 
@@ -1424,6 +1441,46 @@ runtime failures.
 
 ```ballerina
 final http:Client relaxedClientEP = check new ("http://localhost:9090", laxDataBinding = true);
+```
+
+##### 2.4.1.11 Proxy
+
+The client can route its outbound requests through a proxy server configured via the top-level `proxy` field
+(`ProxyConfig`). The `protocol` field selects the proxy protocol:
+
+```ballerina
+public enum ProxyProtocol {
+    HTTP,
+    SOCKS4,
+    SOCKS5
+}
+
+public type ProxyConfig record {|
+    string host = "";
+    int port = 0;
+    string userName = "";
+    string password = "";
+    ProxyProtocol protocol = HTTP;
+|};
+```
+
+- `http:HTTP` (default) — a standard HTTP proxy. Existing behaviour is unchanged.
+- `http:SOCKS4` — a SOCKS version 4 proxy. SOCKS4 does not support password authentication; the optional `userName`
+  is sent as the SOCKS4 user id, and any configured `password` is ignored with a warning. DNS resolution of the
+  target host is performed on the client side.
+- `http:SOCKS5` — a SOCKS version 5 proxy. Supports `userName`/`password` authentication, and DNS resolution of the
+  target host is performed remotely on the proxy side.
+
+SOCKS proxies are supported for both plaintext (`http://`) and TLS (`https://`) targets over HTTP/1.1 and HTTP/2.
+
+```ballerina
+http:Client clientEP = check new ("https://api.example.com",
+    proxy = {
+        host: "localhost",
+        port: 1080,
+        protocol: http:SOCKS5
+    }
+);
 ```
 
 ##### 2.4.2. Client action

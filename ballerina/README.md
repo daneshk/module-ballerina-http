@@ -53,6 +53,18 @@ The payload can be retrieved as the return value from the remote function as fol
 json payload = check clientEndpoint->post("/backend/Json", "foo");
 ```
 
+#### Proxy
+
+The `Client` can route its requests through a proxy server using the `proxy` configuration. The `protocol` field
+selects the proxy type: `http:HTTP` (default) for a standard HTTP proxy, or `http:SOCKS4`/`http:SOCKS5` for SOCKS
+proxies. SOCKS5 supports username/password authentication and resolves the target host on the proxy side, while
+SOCKS4 supports a user id only (no password) and resolves the target host on the client side.
+
+```ballerina
+http:Client clientEndpoint = check new ("https://api.example.com",
+    proxy = {host: "localhost", port: 1080, protocol: http:SOCKS5});
+```
+
 ### Listener
 
 The `Listener` is the underneath server connector that binds the given IP/Port to the network and it's behavior can 
@@ -96,4 +108,5 @@ Also, The `listener` can be configured to authenticate and authorize the inbound
 built-in support for basic authentication, JWT authentication, and OAuth2 authentication.
 
 In addition to that, supports both the HTTP/1.1 and HTTP2 protocols and connection keep-alive, content 
-chunking, HTTP caching, data compression/decompression, payload binding, and authorization can be highlighted as the features of a `Service`.
+chunking, HTTP caching, data compression/decompression, payload binding, HTTP/2 stream concurrency limiting, and
+authorization can be highlighted as the features of a `Service`.

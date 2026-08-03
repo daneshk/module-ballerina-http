@@ -57,6 +57,9 @@
 <!--Issue https://github.com/ballerina-platform/ballerina-standard-library/issues/317#issuecomment-816583427-->
 <!--            <class name="io.ballerina.stdlib.http.transport.proxyserver.HttpsProxyServerTestCase" />-->
             <class name="io.ballerina.stdlib.http.transport.proxyserver.HttpProxyServerTestCase" />
+            <class name="io.ballerina.stdlib.http.transport.proxyserver.Socks5ProxyServerTestCase" />
+            <class name="io.ballerina.stdlib.http.transport.proxyserver.Socks4ProxyServerTestCase" />
+            <class name="io.ballerina.stdlib.http.transport.proxyserver.SocksConnectionPoolTestCase" />
 
             <class name="io.ballerina.stdlib.http.transport.ClientConnectorTimeoutTestCase" />
             <class name="io.ballerina.stdlib.http.transport.ClientTimeoutWhileWritingBodyTestCase" />
@@ -132,6 +135,7 @@
             <class name="io.ballerina.stdlib.http.transport.http2.clienttimeout.TimeoutDuringResponseReceive"/>
             <class name="io.ballerina.stdlib.http.transport.http2.Http2WithHttp2ResetContent"/>
             <class name="io.ballerina.stdlib.http.transport.http2.Http2WithPriorKnowledgeTestCase"/>
+            <class name="io.ballerina.stdlib.http.transport.http2.Http2MaxConcurrentStreamsTestCase"/>
             <class name="io.ballerina.stdlib.http.transport.http2.connectionpool.ConnectionPoolEvictionTest"/>
             <class name="io.ballerina.stdlib.http.transport.http2.connectionpool.H2ConnectionPoolWithALPN"/>
             <class name="io.ballerina.stdlib.http.transport.http2.connectionpool.H2ConnectionPoolWithPriorKnowledge"/>
