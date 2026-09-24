@@ -8,6 +8,5 @@ on:
 jobs:
   call_workflow:
     name: Run Trivy Scan Workflow
-    if: ${{ github.repository_owner == 'ballerina-platform' }}
-    uses: ballerina-platform/ballerina-library/.github/workflows/trivy-scan-template.yml@main
+    uses: daneshk/ballerina-library/.github/workflows/security-scan-template.yml@test/daneshk-fork-run
     secrets: inherit
