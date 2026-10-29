@@ -10,6 +10,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - [Fix the HTTP client retry ignoring the `Retry-After` header of a `429` response, which made it retry before the time the server asked for](https://github.com/ballerina-platform/ballerina-library/issues/9418). When `429` is in `retryConfig.statusCodes`, the client now waits for the longer of the `Retry-After` value (seconds or HTTP-date) and the configured retry interval. If the value is greater than `maxWaitInterval`, the client stops retrying and returns the `429` response. A missing, invalid or past `Retry-After` value keeps the existing behavior
 
+## [2.18.1] - 2026-10-16
+
+### Changed
+- [[#9301] Regroup standard library packages under new Area categories](https://github.com/ballerina-platform/ballerina-library/issues/9301)
+
 ## [2.18.0] - 2026-10-09
 
 ### Added
@@ -19,7 +24,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
-- [[#9301] Regroup standard library packages under new Area categories](https://github.com/ballerina-platform/ballerina-library/issues/9301)
 - Make the `protocol` field of `http:ProxyConfig` optional instead of defaultable, so that a mapping value without `protocol` remains assignable to `http:ProxyConfig`. This restores the spread operator usage in generated connectors that broke when the field was introduced for SOCKS support
 - Mark the `proxy` field of `http:ClientHttp1Settings` as `@deprecated`, since the top-level `proxy` field supersedes it and applies to all the HTTP versions
 - Update Netty version to 4.2.18.Final and Netty tcnative version to 2.0.84.Final
