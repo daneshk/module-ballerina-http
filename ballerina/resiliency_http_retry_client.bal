@@ -14,8 +14,13 @@
 // specific language governing permissions and limitations
 // under the License.
 
+import ballerina/lang.regexp;
 import ballerina/lang.runtime as runtime;
 import ballerina/log;
+import ballerina/time;
+
+const string RETRY_AFTER_HEADER = "retry-after";
+final regexp:RegExp RETRY_AFTER_DELTA_SECONDS_PATTERN = re`^[0-9]+$`;
 
 # Derived set of configurations from the `RetryConfig`.
 #
@@ -314,11 +319,18 @@ isolated function performRetryAction(string path, Request request, HttpOperation
     }
 
     while (currentRetryCount < (retryCount + 1)) {
+        // Wait imposed by the `Retry-After` header of a 429 response, if any.
+        decimal? retryAfterWait = ();
         inRequest = check populateMultipartRequest(inRequest);
         var backendResponse = invokeEndpoint(path, inRequest, requestAction, httpClient, verb = verb);
         if backendResponse is Response {
             int responseStatusCode = backendResponse.statusCode;
             if (statusCodes.indexOf(responseStatusCode) is int) && currentRetryCount < (retryCount) {
+                retryAfterWait = getRetryAfterWait(backendResponse);
+                if retryAfterWait is decimal && retryAfterWait > maxWaitInterval {
+                    // The server asked to wait longer than the client is willing to, so retrying now is pointless.
+                    return backendResponse;
+                }
                 [interval, currentRetryCount] =
                                 calculateEffectiveIntervalAndRetryCount(retryClient, currentRetryCount, interval,
                                 backOffFactor, maxWaitInterval);
@@ -330,6 +342,10 @@ isolated function performRetryAction(string path, Request request, HttpOperation
             if response is Response {
                 int responseStatusCode = response.statusCode;
                 if (statusCodes.indexOf(responseStatusCode) is int) && currentRetryCount < (retryCount) {
+                    retryAfterWait = getRetryAfterWait(response);
+                    if retryAfterWait is decimal && retryAfterWait > maxWaitInterval {
+                        return backendResponse;
+                    }
                     [interval, currentRetryCount] =
                                     calculateEffectiveIntervalAndRetryCount(retryClient, currentRetryCount, interval,
                                     backOffFactor, maxWaitInterval);
@@ -351,9 +367,36 @@ isolated function performRetryAction(string path, Request request, HttpOperation
         } else {
             panic error ClientError("invalid response type received");
         }
-        runtime:sleep(interval);
+        // The `Retry-After` value is the earliest time the server accepts a retry, so never wait less than that.
+        runtime:sleep(retryAfterWait is decimal && retryAfterWait > interval ? retryAfterWait : interval);
     }
     return httpConnectorErr;
+}
+
+// Returns the wait in seconds requested by the `Retry-After` header of a 429 response. Returns `()` if the response is
+// not a 429, or the header is absent or invalid, so that the configured retry interval is used.
+isolated function getRetryAfterWait(Response response) returns decimal? {
+    if response.statusCode != STATUS_TOO_MANY_REQUESTS {
+        return;
+    }
+    string|HeaderNotFoundError headerValue = response.getHeader(RETRY_AFTER_HEADER);
+    if headerValue is HeaderNotFoundError {
+        return;
+    }
+    string value = headerValue.trim();
+    // Delta-seconds form
+    if RETRY_AFTER_DELTA_SECONDS_PATTERN.isFullMatch(value) {
+        decimal|error seconds = decimal:fromString(value);
+        return seconds is decimal ? seconds : ();
+    }
+    // HTTP-date form
+    time:Utc|error retryTime = utcFromString(value, RFC_1123_DATE_TIME);
+    if retryTime is error {
+        log:printDebug("Ignoring invalid Retry-After header value: " + value);
+        return;
+    }
+    time:Seconds waitSeconds = time:utcDiffSeconds(retryTime, time:utcNow());
+    return waitSeconds > 0d ? waitSeconds : ();
 }
 
 isolated function calculateEffectiveIntervalAndRetryCount(RetryClient retryClient, int currentRetryCount,

@@ -1367,6 +1367,28 @@ http:Client clientEP = check new ("http://localhost:9090",
 );
 ```
 
+When the response status code is in `statusCodes`, the client retries after the retry interval, which is multiplied by
+`backOffFactor` on each attempt and limited by `maxWaitInterval`.
+
+For a `429 Too Many Requests` response, the client honors the `Retry-After` response header (RFC 9110 section 10.2.3)
+when `429` is in `statusCodes`. The header value is either a number of seconds or an HTTP-date.
+- The client waits for the longer of the `Retry-After` value and the retry interval, since the header is the earliest
+  time the server accepts a retry.
+- If the `Retry-After` value is greater than `maxWaitInterval`, the client stops retrying and returns the `429`
+  response to the caller.
+- If the header is missing, invalid, or an HTTP-date in the past, the retry interval applies.
+
+```ballerina
+http:Client clientEP = check new ("http://localhost:9090",
+    retryConfig = {
+        interval: 3,
+        count: 3,
+        maxWaitInterval: 60,
+        statusCodes: [429, 503]
+    }
+);
+```
+
 ##### 2.4.1.5 Circuit breaker
 A Circuit Breaker implementation which can be used to gracefully handle network failures.
 ```ballerina

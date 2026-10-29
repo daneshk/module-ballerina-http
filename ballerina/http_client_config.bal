@@ -76,8 +76,12 @@ public type ClientHttp2Settings record {|
 # + count - Number of retry attempts before giving up
 # + interval - Retry interval in seconds
 # + backOffFactor - Multiplier, which increases the retry interval exponentially.
-# + maxWaitInterval - Maximum time of the retry interval in seconds
-# + statusCodes - HTTP response status codes which are considered as failures
+# + maxWaitInterval - Maximum time of the retry interval in seconds. This is also the longest `Retry-After` wait that
+#                     is honored for a `429` response, see `statusCodes`
+# + statusCodes - HTTP response status codes which are considered as failures. For a `429` response with a valid
+#                 `Retry-After` header (seconds or HTTP-date), the client waits for the longer of the header value and
+#                 the retry interval. If the header value is greater than `maxWaitInterval`, the client stops retrying
+#                 and returns the `429` response. A missing, invalid or past `Retry-After` value is ignored
 public type RetryConfig record {|
     int count = 0;
     decimal interval = 0;

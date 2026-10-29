@@ -4,6 +4,12 @@ This file contains all the notable changes done to the Ballerina HTTP package th
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- [Fix the HTTP client retry ignoring the `Retry-After` header of a `429` response, which made it retry before the time the server asked for](https://github.com/ballerina-platform/ballerina-library/issues/9418). When `429` is in `retryConfig.statusCodes`, the client now waits for the longer of the `Retry-After` value (seconds or HTTP-date) and the configured retry interval. If the value is greater than `maxWaitInterval`, the client stops retrying and returns the `429` response. A missing, invalid or past `Retry-After` value keeps the existing behavior
+
 ## [2.18.0] - 2026-10-09
 
 ### Added
